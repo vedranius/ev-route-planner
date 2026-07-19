@@ -10,7 +10,7 @@ interface RouteSegment {
   legs: any[];
 }
 
-async function getOSRMRoute(
+export async function getOSRMRoute(
   coords: [number, number][],
   avoidTolls: boolean,
   avoidHighways: boolean,

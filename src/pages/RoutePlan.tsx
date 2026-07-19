@@ -3,7 +3,7 @@ import { MapContainer, TileLayer, Marker, Polyline, Popup, useMap, useMapEvents 
 import L from 'leaflet';
 import { useVehicle } from '../context/VehicleContext';
 import { searchChargersByLocation } from '../services/openChargeMap';
-import { calculateFullRoute } from '../services/routeCalculator';
+import { calculateFullRoute, getOSRMRoute } from '../services/routeCalculator';
 import type { ChargerStation, ConnectorType, RoutePlan } from '../types';
 import { CONNECTOR_LABELS } from '../types';
 
@@ -246,11 +246,24 @@ export default function RoutePlanPage() {
     setError('');
     setLoading(true);
 
-    const loadedStations = await loadChargers(
-      (startCoords[0] + endCoords[0]) / 2,
-      (startCoords[1] + endCoords[1]) / 2
+    // First get the route to know the path
+    const rawRoute = await getOSRMRoute(
+      [startCoords, endCoords],
+      avoidTolls,
+      avoidHighways,
+      avoidFerries
     );
 
+    if (!rawRoute) {
+      setError('Could not calculate route. Please check your start and end locations.');
+      setLoading(false);
+      return;
+    }
+
+    // Load chargers along the ENTIRE route by sampling points every ~50km
+    const loadedStations = await loadChargersAlongRoute(rawRoute.geometry);
+
+    // Now calculate the full route with charging stops
     const routeResult = await calculateFullRoute(
       startCoords[0],
       startCoords[1],
@@ -302,11 +315,53 @@ export default function RoutePlanPage() {
     setLoading(false);
   };
 
-  const loadChargers = useCallback(async (lat: number, lng: number): Promise<ChargerStation[]> => {
-    const data = await searchChargersByLocation(lat, lng, 100, 200, preferredConnectors);
-    setStations(data);
-    return data;
+  const loadChargersAlongRoute = useCallback(async (routeCoords: [number, number][]): Promise<ChargerStation[]> => {
+    // Sample points every ~50km along the route
+    const SAMPLE_INTERVAL_KM = 50;
+    const SEARCH_RADIUS_KM = 30;
+    const allStations = new Map<string, ChargerStation>();
+
+    let accumulatedKm = 0;
+
+    for (let i = 0; i < routeCoords.length - 1; i++) {
+      const lat1 = routeCoords[i][0], lng1 = routeCoords[i][1];
+      const lat2 = routeCoords[i + 1][0], lng2 = routeCoords[i + 1][1];
+
+      const segDist = haversine(lat1, lng1, lat2, lng2);
+      accumulatedKm += segDist;
+
+      if (accumulatedKm >= SAMPLE_INTERVAL_KM || i === 0 || i === routeCoords.length - 2) {
+        accumulatedKm = 0;
+        try {
+          const stations = await searchChargersByLocation(lat1, lng1, SEARCH_RADIUS_KM, 100, preferredConnectors);
+          for (const s of stations) {
+            if (!allStations.has(s.id)) {
+              allStations.set(s.id, s);
+            }
+          }
+        } catch {
+          // Continue on error
+        }
+      }
+    }
+
+    const result = Array.from(allStations.values());
+    setStations(result);
+    return result;
   }, [preferredConnectors]);
+
+  function haversine(lat1: number, lon1: number, lat2: number, lon2: number): number {
+    const R = 6371;
+    const dLat = ((lat2 - lat1) * Math.PI) / 180;
+    const dLon = ((lon2 - lon1) * Math.PI) / 180;
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos((lat1 * Math.PI) / 180) *
+        Math.cos((lat2 * Math.PI) / 180) *
+        Math.sin(dLon / 2) *
+        Math.sin(dLon / 2);
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  }
 
   const getMarkerIcon = (color: string) => {
     return L.divIcon({

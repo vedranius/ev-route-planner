@@ -150,36 +150,12 @@ export async function searchChargersByBounds(
   maxResults: number = 200,
   connectionTypes?: ConnectorType[]
 ): Promise<ChargerStation[]> {
-  const params = new URLSearchParams({
-    output: 'json',
-    boundingbox: `${swLat},${swLng},${neLat},${neLng}`,
-    maxresults: maxResults.toString(),
-    compact: 'true',
-    verbose: 'false',
-    key: OCM_API_KEY,
-  });
+  // OCM boundingbox parameter doesn't work reliably - use distance from center instead
+  const centerLat = (swLat + neLat) / 2;
+  const centerLng = (swLng + neLng) / 2;
+  const diagKm = haversineDistanceKm(swLat, swLng, neLat, neLng);
 
-  if (connectionTypes && connectionTypes.length > 0) {
-    const typeIds = connectionTypes.flatMap((t) => getOCMConnectionTypeIds(t));
-    params.append('connectiontypeid', [...new Set(typeIds)].join(','));
-  }
-
-  try {
-    console.log('OCM Bounds search:', { swLat, swLng, neLat, neLng });
-    const data = await ocmFetch(`${OCM_BASE}/poi/?${params}`);
-    console.log('OCM Bounds results:', data?.length || 0);
-    return data.map(mapOCMToStation).filter(Boolean);
-  } catch (err) {
-    console.error('Failed to fetch chargers by bounds:', err);
-    // Fallback to location-based search
-    try {
-      const centerLat = (swLat + neLat) / 2;
-      const centerLng = (swLng + neLng) / 2;
-      return await searchChargersByLocation(centerLat, centerLng, 50, maxResults, connectionTypes);
-    } catch {
-      return [];
-    }
-  }
+  return searchChargersByLocation(centerLat, centerLng, Math.max(diagKm / 2, 10), maxResults, connectionTypes);
 }
 
 export async function getChargerDetails(id: string): Promise<ChargerStation | null> {
@@ -254,6 +230,20 @@ function getOCMConnectionTypeIds(type: ConnectorType): number[] {
     other: [0],
   };
   return map[type] || [0];
+}
+
+function haversineDistanceKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLon = ((lon2 - lon1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLon / 2) *
+      Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
 }
 
 export async function getReferenceData(): Promise<any> {
