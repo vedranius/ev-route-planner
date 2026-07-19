@@ -432,9 +432,7 @@ export async function geocodeAddress(address: string): Promise<{ lat: number; ln
     ];
 
     for (const url of queries) {
-      const response = await fetch(url, {
-        headers: { 'User-Agent': 'EVRoutePlanner/1.0' },
-      });
+      const response = await fetch(url);
       if (!response.ok) continue;
       const data = await response.json();
       if (data.length > 0) {

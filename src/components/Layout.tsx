@@ -27,11 +27,10 @@ export default function Layout() {
 }
 
 export function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const { loading } = useAuth();
+  const { loading, currentUser } = useAuth();
 
   if (loading) return null;
-  const auth = useAuth();
-  if (!auth.currentUser) return <Navigate to="/login" replace />;
+  if (!currentUser) return <Navigate to="/login" replace />;
   return <>{children}</>;
 }
 

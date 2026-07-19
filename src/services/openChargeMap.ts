@@ -4,21 +4,16 @@ const OCM_API_KEY = import.meta.env.VITE_OCM_API_KEY || 'd8e0e36d-6fe2-4a24-9d29
 const OCM_BASE = 'https://api.openchargemap.io/v3';
 
 async function ocmFetch(url: string, retries: number = 2): Promise<any> {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 20000);
-
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 20000);
       const response = await fetch(url, {
         signal: controller.signal,
-        headers: {
-          'User-Agent': 'EVRoutePlanner/1.0 (https://github.com/vedranius/ev-route-planner)',
-        },
       });
       clearTimeout(timeout);
 
       if (response.status === 429) {
-        // Rate limited - wait and retry
         if (attempt < retries) {
           await new Promise((r) => setTimeout(r, 2000 * (attempt + 1)));
           continue;
@@ -28,11 +23,10 @@ async function ocmFetch(url: string, retries: number = 2): Promise<any> {
       if (!response.ok) throw new Error(`OCM API error: ${response.status}`);
       return await response.json();
     } catch (err: any) {
-      clearTimeout(timeout);
       if (err.name === 'AbortError') {
         console.error('OCM API request timed out');
       }
-      if (attempt < retries && (err.name === 'AbortError' || err.message?.includes('5'))) {
+      if (attempt < retries) {
         await new Promise((r) => setTimeout(r, 1000));
         continue;
       }

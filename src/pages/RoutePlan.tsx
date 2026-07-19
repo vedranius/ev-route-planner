@@ -61,9 +61,7 @@ function LocationSearch({
 
         let results: GeocodeResult[] = [];
         for (const url of urls) {
-          const response = await fetch(url, {
-            headers: { 'User-Agent': 'EVRoutePlanner/1.0' },
-          });
+          const response = await fetch(url);
           if (!response.ok) continue;
           const data = await response.json();
           if (data.length > 0) {
@@ -100,9 +98,7 @@ function LocationSearch({
       (pos) => {
         const coords: [number, number] = [pos.coords.latitude, pos.coords.longitude];
         // Reverse geocode to get address
-        fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${coords[0]}&lon=${coords[1]}`, {
-          headers: { 'User-Agent': 'EVRoutePlanner/1.0' },
-        })
+        fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${coords[0]}&lon=${coords[1]}`)
           .then((r) => r.json())
           .then((data) => {
             const addr = data.display_name || 'My current location';
@@ -250,7 +246,7 @@ export default function RoutePlanPage() {
     setError('');
     setLoading(true);
 
-    await loadChargers(
+    const loadedStations = await loadChargers(
       (startCoords[0] + endCoords[0]) / 2,
       (startCoords[1] + endCoords[1]) / 2
     );
@@ -285,7 +281,7 @@ export default function RoutePlanPage() {
       avoidHighways,
       avoidFerries,
       selectedVehicle.sohPercent,
-      stations,
+      loadedStations,
       preferredConnectors
     );
 
@@ -306,9 +302,10 @@ export default function RoutePlanPage() {
     setLoading(false);
   };
 
-  const loadChargers = useCallback(async (lat: number, lng: number) => {
+  const loadChargers = useCallback(async (lat: number, lng: number): Promise<ChargerStation[]> => {
     const data = await searchChargersByLocation(lat, lng, 100, 200, preferredConnectors);
     setStations(data);
+    return data;
   }, [preferredConnectors]);
 
   const getMarkerIcon = (color: string) => {
