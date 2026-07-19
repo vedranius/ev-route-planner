@@ -1,5 +1,24 @@
 # Changelog
 
+## [1.0.3] - 2026-07-19
+
+### Bug Fixes
+- **Chargers not showing**: Fixed chargers not appearing on map - now loads on mount and on map movement
+- **Route planner random locations**: Fixed geocoding with Nominatim autocomplete dropdown for location search
+- **Firebase unauthorized domain**: Added `vedranius.github.io` to authorized domains
+- **Google sign-in error**: Resolved auth/unauthorized-domain error
+
+### New Features
+- **Location autocomplete**: Type address and get suggestions from OpenStreetMap Nominatim
+- **Use my location button**: Quick button to set current GPS location as start point
+- **OCM API key integration**: Real charger data from 300,000+ stations with proper API authentication
+- **Better error handling**: Improved feedback when locations can't be found or routes can't be calculated
+
+### Technical
+- Added `MapLoader` component for initial charger loading on ChargersPage
+- Added timeout and User-Agent headers for OCM API calls
+- Added proper CORS handling with custom fetch wrapper
+
 ## [1.0.0] - 2026-07-19
 
 ### Initial Release
