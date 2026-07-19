@@ -53,15 +53,28 @@ function LocationSearch({
     timeoutRef.current = setTimeout(async () => {
       setSearching(true);
       try {
-        const response = await fetch(
-          `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=5&addressdetails=1`
-        );
-        const data = await response.json();
-        const results: GeocodeResult[] = data.map((item: any) => ({
-          lat: parseFloat(item.lat),
-          lng: parseFloat(item.lon),
-          displayName: item.display_name,
-        }));
+        // Try regional search first (Croatia and neighbors), then fallback
+        const urls = [
+          `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=5&addressdetails=1&countrycodes=hr,si,ba,rs,me,mk,al`,
+          `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=5&addressdetails=1`,
+        ];
+
+        let results: GeocodeResult[] = [];
+        for (const url of urls) {
+          const response = await fetch(url, {
+            headers: { 'User-Agent': 'EVRoutePlanner/1.0' },
+          });
+          if (!response.ok) continue;
+          const data = await response.json();
+          if (data.length > 0) {
+            results = data.map((item: any) => ({
+              lat: parseFloat(item.lat),
+              lng: parseFloat(item.lon),
+              displayName: item.display_name,
+            }));
+            break;
+          }
+        }
         setSuggestions(results);
         setShowSuggestions(results.length > 0);
       } catch (err) {
@@ -79,17 +92,39 @@ function LocationSearch({
   };
 
   const handleUseMyLocation = () => {
-    if (!navigator.geolocation) return;
+    if (!navigator.geolocation) {
+      alert('Geolocation is not supported by your browser.');
+      return;
+    }
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         const coords: [number, number] = [pos.coords.latitude, pos.coords.longitude];
-        onChange('My current location');
-        onSelect(coords, 'My current location');
+        // Reverse geocode to get address
+        fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${coords[0]}&lon=${coords[1]}`, {
+          headers: { 'User-Agent': 'EVRoutePlanner/1.0' },
+        })
+          .then((r) => r.json())
+          .then((data) => {
+            const addr = data.display_name || 'My current location';
+            onChange(addr);
+            onSelect(coords, addr);
+          })
+          .catch(() => {
+            onChange('My current location');
+            onSelect(coords, 'My current location');
+          });
       },
-      () => {
-        alert('Unable to get your location. Please enter an address instead.');
+      (err) => {
+        console.error('Geolocation error:', err);
+        if (err.code === 1) {
+          alert('Location access denied. Please allow location access in your browser settings and try again.');
+        } else if (err.code === 2) {
+          alert('Unable to determine your location. Please enter an address manually.');
+        } else {
+          alert('Location request timed out. Please enter an address manually.');
+        }
       },
-      { enableHighAccuracy: true, timeout: 10000 }
+      { enableHighAccuracy: false, timeout: 15000, maximumAge: 60000 }
     );
   };
 
@@ -171,7 +206,7 @@ export default function RoutePlanPage() {
   const [stations, setStations] = useState<ChargerStation[]>([]);
   const [route, setRoute] = useState<RoutePlan | null>(null);
   const [loading, setLoading] = useState(false);
-  const [mapCenter, setMapCenter] = useState<[number, number]>([48.2, 16.3]);
+  const [mapCenter, setMapCenter] = useState<[number, number]>([45.81, 15.98]); // Zagreb, Croatia
   const [placing, setPlacing] = useState<'start' | 'end' | null>(null);
   const [bounds, setBounds] = useState<[[number, number], [number, number]] | null>(null);
   const [error, setError] = useState('');

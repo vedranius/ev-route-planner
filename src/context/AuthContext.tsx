@@ -12,6 +12,16 @@ import { ref, set, get, update } from 'firebase/database';
 import { auth, googleProvider, db, isFirebaseConfigured } from '../config/firebase';
 import type { User } from '../types';
 
+const VEHICLES_KEY = 'evrp_vehicles';
+
+function loadLocalVehicles(): any[] {
+  try {
+    return JSON.parse(localStorage.getItem(VEHICLES_KEY) || '[]');
+  } catch {
+    return [];
+  }
+}
+
 interface DemoUser {
   uid: string;
   email: string;
@@ -79,23 +89,48 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   const loadUserDataFirebase = useCallback(async (user: FirebaseUser) => {
-    if (!db) return;
-    const userRef = ref(db, `users/${user.uid}`);
-    const snapshot = await get(userRef);
-    if (snapshot.exists()) {
-      setUserData(snapshot.val() as User);
-    } else {
-      const newUser: User = {
+    if (!db) {
+      // No database - create default user data
+      setUserData({
         uid: user.uid,
         email: user.email || '',
         displayName: user.displayName || user.email?.split('@')[0] || 'User',
         photoURL: user.photoURL || undefined,
         twoFactorEnabled: false,
-        vehicles: [],
+        vehicles: loadLocalVehicles(),
         createdAt: Date.now(),
-      };
-      await set(userRef, newUser);
-      setUserData(newUser);
+      });
+      return;
+    }
+    try {
+      const userRef = ref(db, `users/${user.uid}`);
+      const snapshot = await get(userRef);
+      if (snapshot.exists()) {
+        setUserData(snapshot.val() as User);
+      } else {
+        const newUser: User = {
+          uid: user.uid,
+          email: user.email || '',
+          displayName: user.displayName || user.email?.split('@')[0] || 'User',
+          photoURL: user.photoURL || undefined,
+          twoFactorEnabled: false,
+          vehicles: loadLocalVehicles(),
+          createdAt: Date.now(),
+        };
+        await set(userRef, newUser);
+        setUserData(newUser);
+      }
+    } catch (err) {
+      console.error('Firebase read failed, using local data:', err);
+      setUserData({
+        uid: user.uid,
+        email: user.email || '',
+        displayName: user.displayName || user.email?.split('@')[0] || 'User',
+        photoURL: user.photoURL || undefined,
+        twoFactorEnabled: false,
+        vehicles: loadLocalVehicles(),
+        createdAt: Date.now(),
+      });
     }
   }, []);
 
@@ -119,12 +154,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (isFirebaseConfigured && auth) {
       const unsubscribe = onAuthStateChanged(auth, async (user) => {
         setCurrentUser(user);
-        if (user) {
-          await loadUserDataFirebase(user);
-        } else {
-          setUserData(null);
+        try {
+          if (user) {
+            await loadUserDataFirebase(user);
+          } else {
+            setUserData(null);
+          }
+        } catch (err) {
+          console.error('Error loading user data:', err);
+          // Still set some default data so app works
+          if (user) {
+            setUserData({
+              uid: user.uid,
+              email: user.email || '',
+              displayName: user.displayName || user.email?.split('@')[0] || 'User',
+              twoFactorEnabled: false,
+              vehicles: [],
+              createdAt: Date.now(),
+            });
+          }
+        } finally {
+          setLoading(false);
         }
-        setLoading(false);
       });
       return unsubscribe;
     } else {

@@ -41,7 +41,10 @@ async function getOSRMRoute(
     if (!data.routes || data.routes.length === 0) return null;
 
     const route = data.routes[0];
-    const coords: [number, number][] = route.geometry.coordinates;
+    // GeoJSON returns [lng, lat] but Leaflet expects [lat, lng]
+    const coords: [number, number][] = route.geometry.coordinates.map(
+      (c: [number, number]) => [c[1], c[0]]
+    );
 
     return {
       distance: route.distance / 1000,
@@ -422,17 +425,27 @@ export async function calculateFullRoute(
 
 export async function geocodeAddress(address: string): Promise<{ lat: number; lng: number; displayName: string } | null> {
   try {
-    const response = await fetch(
-      `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address)}&limit=1`
-    );
-    if (!response.ok) return null;
-    const data = await response.json();
-    if (data.length === 0) return null;
-    return {
-      lat: parseFloat(data[0].lat),
-      lng: parseFloat(data[0].lon),
-      displayName: data[0].display_name,
-    };
+    // Try with countrycodes first (hr for Croatia), then fallback without
+    const queries = [
+      `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address)}&limit=1&countrycodes=hr,si,ba,rs,me,mk,al&addressdetails=1`,
+      `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address)}&limit=1&addressdetails=1`,
+    ];
+
+    for (const url of queries) {
+      const response = await fetch(url, {
+        headers: { 'User-Agent': 'EVRoutePlanner/1.0' },
+      });
+      if (!response.ok) continue;
+      const data = await response.json();
+      if (data.length > 0) {
+        return {
+          lat: parseFloat(data[0].lat),
+          lng: parseFloat(data[0].lon),
+          displayName: data[0].display_name,
+        };
+      }
+    }
+    return null;
   } catch (err) {
     console.error('Geocoding error:', err);
     return null;

@@ -40,7 +40,7 @@ export default function ChargersPage() {
   const [selectedStation, setSelectedStation] = useState<ChargerStation | null>(null);
   const [filterStatus, setFilterStatus] = useState<ChargerStatus | 'all'>('all');
   const [filterConnectors, setFilterConnectors] = useState<ConnectorType[]>([]);
-  const [mapCenter, setMapCenter] = useState<[number, number]>([48.2, 16.3]);
+  const [mapCenter, setMapCenter] = useState<[number, number]>([45.81, 15.98]); // Zagreb, Croatia
   const [initialLoad, setInitialLoad] = useState(true);
 
   useEffect(() => {
@@ -64,6 +64,16 @@ export default function ChargersPage() {
       setStations(data);
     } catch (err) {
       console.error('Failed to load chargers:', err);
+      // Retry with location-based search as fallback
+      try {
+        const centerLat = (bounds.sw[0] + bounds.ne[0]) / 2;
+        const centerLng = (bounds.sw[1] + bounds.ne[1]) / 2;
+        const { searchChargersByLocation } = await import('../services/openChargeMap');
+        const data = await searchChargersByLocation(centerLat, centerLng, 50, 200, filterConnectors.length > 0 ? filterConnectors : undefined);
+        setStations(data);
+      } catch (retryErr) {
+        console.error('Retry also failed:', retryErr);
+      }
     }
     setLoading(false);
     setInitialLoad(false);

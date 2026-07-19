@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback, type ReactNode } from 'react';
+import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from 'react';
 import type { UserVehicle } from '../types';
 import type { VehicleSpec } from '../data/vehicles';
 import { useAuth } from './AuthContext';
@@ -52,8 +52,25 @@ export function useVehicle() {
 export function VehicleProvider({ children }: { children: ReactNode }) {
   const { userData, updateUserData } = useAuth();
   const [selectedVehicle, setSelectedVehicle] = useState<UserVehicle | null>(() => loadSelectedVehicle());
+  const [localVehicles, setLocalVehicles] = useState<UserVehicle[]>(() => loadLocalVehicles());
 
-  const vehicles = userData?.vehicles || loadLocalVehicles();
+  const vehicles = userData?.vehicles && userData.vehicles.length > 0 ? userData.vehicles : localVehicles;
+
+  // Sync Firebase vehicles to localStorage when they load
+  useEffect(() => {
+    if (userData?.vehicles && userData.vehicles.length > 0) {
+      saveLocalVehicles(userData.vehicles);
+      setLocalVehicles(userData.vehicles);
+      // Also sync selected vehicle if it's not in the current vehicles
+      if (selectedVehicle) {
+        const found = userData.vehicles.find((v) => v.id === selectedVehicle.id);
+        if (!found && userData.vehicles.length > 0) {
+          setSelectedVehicle(userData.vehicles[0]);
+          saveSelectedVehicle(userData.vehicles[0]);
+        }
+      }
+    }
+  }, [userData?.vehicles]);
 
   const selectVehicle = useCallback((vehicle: UserVehicle) => {
     setSelectedVehicle(vehicle);
