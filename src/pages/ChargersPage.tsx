@@ -5,10 +5,25 @@ import { searchChargersByBounds } from '../services/openChargeMap';
 import type { ChargerStation, ConnectorType, ChargerStatus } from '../types';
 import { CONNECTOR_LABELS, STATUS_LABELS } from '../types';
 
-function MapEvents({ onMoveEnd }: { onMoveEnd: (bounds: any) => void }) {
+function MapLoader({ onReady }: { onReady: (bounds: any) => void }) {
   const map = useMap();
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      const b = map.getBounds();
+      onReady({
+        sw: [b.getSouthWest().lat, b.getSouthWest().lng],
+        ne: [b.getNorthEast().lat, b.getNorthEast().lng],
+      });
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [map, onReady]);
+  return null;
+}
+
+function MapEvents({ onMoveEnd }: { onMoveEnd: (bounds: any) => void }) {
   useMapEvents({
-    moveend() {
+    moveend(e) {
+      const map = e.target;
       const b = map.getBounds();
       onMoveEnd({
         sw: [b.getSouthWest().lat, b.getSouthWest().lng],
@@ -26,6 +41,7 @@ export default function ChargersPage() {
   const [filterStatus, setFilterStatus] = useState<ChargerStatus | 'all'>('all');
   const [filterConnectors, setFilterConnectors] = useState<ConnectorType[]>([]);
   const [mapCenter, setMapCenter] = useState<[number, number]>([48.2, 16.3]);
+  const [initialLoad, setInitialLoad] = useState(true);
 
   useEffect(() => {
     if (navigator.geolocation) {
@@ -38,15 +54,24 @@ export default function ChargersPage() {
 
   const loadChargers = useCallback(async (bounds: any) => {
     setLoading(true);
-    const data = await searchChargersByBounds(
-      bounds.sw[0], bounds.sw[1],
-      bounds.ne[0], bounds.ne[1],
-      200,
-      filterConnectors.length > 0 ? filterConnectors : undefined
-    );
-    setStations(data);
+    try {
+      const data = await searchChargersByBounds(
+        bounds.sw[0], bounds.sw[1],
+        bounds.ne[0], bounds.ne[1],
+        200,
+        filterConnectors.length > 0 ? filterConnectors : undefined
+      );
+      setStations(data);
+    } catch (err) {
+      console.error('Failed to load chargers:', err);
+    }
     setLoading(false);
+    setInitialLoad(false);
   }, [filterConnectors]);
+
+  const handleMapReady = useCallback((bounds: any) => {
+    loadChargers(bounds);
+  }, [loadChargers]);
 
   const handleMoveEnd = useCallback((bounds: any) => {
     loadChargers(bounds);
@@ -79,6 +104,12 @@ export default function ChargersPage() {
           <div className="flex items-center gap-2 text-sm text-[#94a3b8]">
             <div className="w-4 h-4 border-2 border-[#10b981] border-t-transparent rounded-full animate-spin" />
             Loading chargers...
+          </div>
+        )}
+
+        {!loading && initialLoad && (
+          <div className="p-3 rounded-lg bg-[#3b82f6]/10 border border-[#3b82f6]/30 text-[#3b82f6] text-sm">
+            Loading chargers for your area... Move the map to explore more.
           </div>
         )}
 
@@ -173,6 +204,7 @@ export default function ChargersPage() {
             attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           />
+          <MapLoader onReady={handleMapReady} />
           <MapEvents onMoveEnd={handleMoveEnd} />
 
           {filteredStations.map((station) => (

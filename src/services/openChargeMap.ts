@@ -1,7 +1,29 @@
 import type { ConnectorType, ChargerStatus, ChargerConnection, ChargerStation, ChargingLevel } from '../types';
 
-const OCM_API_KEY = import.meta.env.VITE_OCM_API_KEY || '';
+const OCM_API_KEY = import.meta.env.VITE_OCM_API_KEY || 'd8e0e36d-6fe2-4a24-9d29-354bcd5d1923';
 const OCM_BASE = 'https://api.openchargemap.io/v3';
+
+async function ocmFetch(url: string): Promise<any> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15000);
+  try {
+    const response = await fetch(url, {
+      signal: controller.signal,
+      headers: {
+        'User-Agent': 'EVRoutePlanner/1.0 (https://github.com/vedranius/ev-route-planner)',
+      },
+    });
+    clearTimeout(timeout);
+    if (!response.ok) throw new Error(`OCM API error: ${response.status}`);
+    return await response.json();
+  } catch (err: any) {
+    clearTimeout(timeout);
+    if (err.name === 'AbortError') {
+      console.error('OCM API request timed out');
+    }
+    throw err;
+  }
+}
 
 const CONNECTOR_MAP: Record<number, ConnectorType> = {
   1: 'type1',
@@ -101,9 +123,7 @@ export async function searchChargersByLocation(
   }
 
   try {
-    const response = await fetch(`${OCM_BASE}/poi/?${params}`);
-    if (!response.ok) throw new Error(`OCM API error: ${response.status}`);
-    const data = await response.json();
+    const data = await ocmFetch(`${OCM_BASE}/poi/?${params}`);
     return data.map(mapOCMToStation).filter(Boolean);
   } catch (err) {
     console.error('Failed to fetch chargers from OCM:', err);
@@ -134,9 +154,7 @@ export async function searchChargersByBounds(
   }
 
   try {
-    const response = await fetch(`${OCM_BASE}/poi/?${params}`);
-    if (!response.ok) throw new Error(`OCM API error: ${response.status}`);
-    const data = await response.json();
+    const data = await ocmFetch(`${OCM_BASE}/poi/?${params}`);
     return data.map(mapOCMToStation).filter(Boolean);
   } catch (err) {
     console.error('Failed to fetch chargers by bounds:', err);
@@ -154,9 +172,7 @@ export async function getChargerDetails(id: string): Promise<ChargerStation | nu
   });
 
   try {
-    const response = await fetch(`${OCM_BASE}/poi/?${params}`);
-    if (!response.ok) throw new Error(`OCM API error: ${response.status}`);
-    const data = await response.json();
+    const data = await ocmFetch(`${OCM_BASE}/poi/?${params}`);
     if (data.length > 0) return mapOCMToStation(data[0]);
     return null;
   } catch (err) {
@@ -227,9 +243,8 @@ export async function getReferenceData(): Promise<any> {
   });
 
   try {
-    const response = await fetch(`${OCM_BASE}/referencedata/?${params}`);
-    if (!response.ok) throw new Error(`OCM API error: ${response.status}`);
-    return await response.json();
+    const data = await ocmFetch(`${OCM_BASE}/referencedata/?${params}`);
+    return data;
   } catch (err) {
     console.error('Failed to fetch reference data:', err);
     return null;

@@ -3,11 +3,142 @@ import { MapContainer, TileLayer, Marker, Polyline, Popup, useMap, useMapEvents 
 import L from 'leaflet';
 import { useVehicle } from '../context/VehicleContext';
 import { searchChargersByLocation } from '../services/openChargeMap';
-import { calculateFullRoute, geocodeAddress } from '../services/routeCalculator';
+import { calculateFullRoute } from '../services/routeCalculator';
 import type { ChargerStation, ConnectorType, RoutePlan } from '../types';
 import { CONNECTOR_LABELS } from '../types';
 
-function MapEvents({ onMapClick }: { onMapClick: (lat: number, lng: number) => void }) {
+interface GeocodeResult {
+  lat: number;
+  lng: number;
+  displayName: string;
+}
+
+function LocationSearch({
+  label,
+  value,
+  onChange,
+  onSelect,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  onSelect: (coords: [number, number], address: string) => void;
+}) {
+  const [suggestions, setSuggestions] = useState<GeocodeResult[]>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [searching, setSearching] = useState(false);
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setShowSuggestions(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const handleSearch = (query: string) => {
+    onChange(query);
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+
+    if (query.length < 3) {
+      setSuggestions([]);
+      setShowSuggestions(false);
+      return;
+    }
+
+    timeoutRef.current = setTimeout(async () => {
+      setSearching(true);
+      try {
+        const response = await fetch(
+          `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=5&addressdetails=1`
+        );
+        const data = await response.json();
+        const results: GeocodeResult[] = data.map((item: any) => ({
+          lat: parseFloat(item.lat),
+          lng: parseFloat(item.lon),
+          displayName: item.display_name,
+        }));
+        setSuggestions(results);
+        setShowSuggestions(results.length > 0);
+      } catch (err) {
+        console.error('Autocomplete error:', err);
+      }
+      setSearching(false);
+    }, 400);
+  };
+
+  const handleSelect = (result: GeocodeResult) => {
+    onChange(result.displayName);
+    onSelect([result.lat, result.lng], result.displayName);
+    setShowSuggestions(false);
+    setSuggestions([]);
+  };
+
+  const handleUseMyLocation = () => {
+    if (!navigator.geolocation) return;
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const coords: [number, number] = [pos.coords.latitude, pos.coords.longitude];
+        onChange('My current location');
+        onSelect(coords, 'My current location');
+      },
+      () => {
+        alert('Unable to get your location. Please enter an address instead.');
+      },
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
+  };
+
+  return (
+    <div ref={containerRef} className="relative">
+      <label className="block text-sm text-[#94a3b8] mb-1">{label}</label>
+      <div className="flex gap-2">
+        <div className="relative flex-1">
+          <input
+            type="text"
+            value={value}
+            onChange={(e) => handleSearch(e.target.value)}
+            onFocus={() => suggestions.length > 0 && setShowSuggestions(true)}
+            placeholder="Search address..."
+            className="input-field pr-6"
+          />
+          {searching && (
+            <div className="absolute right-2 top-1/2 -translate-y-1/2">
+              <div className="w-3 h-3 border-2 border-[#10b981] border-t-transparent rounded-full animate-spin" />
+            </div>
+          )}
+        </div>
+        <button
+          onClick={handleUseMyLocation}
+          className="px-3 rounded-lg bg-[#334155] text-[#94a3b8] hover:bg-[#475569] hover:text-white transition-colors text-sm font-medium"
+          title="Use my current location"
+        >
+          📍
+        </button>
+      </div>
+      {showSuggestions && suggestions.length > 0 && (
+        <div className="absolute z-50 w-full mt-1 bg-[#1e293b] border border-[#334155] rounded-lg shadow-lg max-h-48 overflow-y-auto">
+          {suggestions.map((s, i) => (
+            <button
+              key={i}
+              onClick={() => handleSelect(s)}
+              className="w-full text-left px-3 py-2 text-sm hover:bg-[#334155] transition-colors border-b border-[#334155] last:border-b-0"
+            >
+              <p className="text-[#f1f5f9] truncate">{s.displayName.split(',').slice(0, 3).join(',')}</p>
+              <p className="text-[10px] text-[#64748b]">{s.lat.toFixed(5)}, {s.lng.toFixed(5)}</p>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function MapEventsHandler({ onMapClick }: { onMapClick: (lat: number, lng: number) => void }) {
   useMapEvents({
     click(e) {
       onMapClick(e.latlng.lat, e.latlng.lng);
@@ -43,7 +174,7 @@ export default function RoutePlanPage() {
   const [mapCenter, setMapCenter] = useState<[number, number]>([48.2, 16.3]);
   const [placing, setPlacing] = useState<'start' | 'end' | null>(null);
   const [bounds, setBounds] = useState<[[number, number], [number, number]] | null>(null);
-  const mapRef = useRef<any>(null);
+  const [error, setError] = useState('');
 
   useEffect(() => {
     if (navigator.geolocation) {
@@ -66,27 +197,22 @@ export default function RoutePlanPage() {
     }
   }, [placing]);
 
-  const handleGeocode = async (address: string, type: 'start' | 'end') => {
-    if (!address.trim()) return;
-    const result = await geocodeAddress(address);
-    if (result) {
-      if (type === 'start') {
-        setStartCoords([result.lat, result.lng]);
-        setStartAddress(result.displayName);
-      } else {
-        setEndCoords([result.lat, result.lng]);
-        setEndAddress(result.displayName);
-      }
-    }
+  const handleStartSelect = (coords: [number, number], address: string) => {
+    setStartCoords(coords);
+    setStartAddress(address);
   };
 
-  const loadChargers = useCallback(async (lat: number, lng: number) => {
-    const data = await searchChargersByLocation(lat, lng, 100, 200, preferredConnectors);
-    setStations(data);
-  }, [preferredConnectors]);
+  const handleEndSelect = (coords: [number, number], address: string) => {
+    setEndCoords(coords);
+    setEndAddress(address);
+  };
 
   const handlePlanRoute = async () => {
-    if (!startCoords || !endCoords || !selectedVehicle) return;
+    if (!startCoords || !endCoords || !selectedVehicle) {
+      setError('Please set both start and end locations and select a vehicle.');
+      return;
+    }
+    setError('');
     setLoading(true);
 
     await loadChargers(
@@ -111,7 +237,12 @@ export default function RoutePlanPage() {
         rangeWltpKm: Math.round((selectedVehicle.usableBatteryKwh / selectedVehicle.consumptionKwhPer100km) * 100),
         maxChargePowerDcKw: selectedVehicle.maxChargePowerKw,
         connectorTypes: selectedVehicle.connectorTypes,
-        chargingCurve: [{ soc: 0, power: selectedVehicle.maxChargePowerKw }, { soc: 50, power: selectedVehicle.maxChargePowerKw * 0.7 }, { soc: 80, power: selectedVehicle.maxChargePowerKw * 0.4 }, { soc: 100, power: selectedVehicle.maxChargePowerKw * 0.1 }],
+        chargingCurve: [
+          { soc: 0, power: selectedVehicle.maxChargePowerKw },
+          { soc: 50, power: selectedVehicle.maxChargePowerKw * 0.7 },
+          { soc: 80, power: selectedVehicle.maxChargePowerKw * 0.4 },
+          { soc: 100, power: selectedVehicle.maxChargePowerKw * 0.1 },
+        ],
       },
       selectedVehicle.socPercent,
       speed,
@@ -133,15 +264,22 @@ export default function RoutePlanPage() {
           [Math.max(...lats), Math.max(...lngs)],
         ]);
       }
+    } else {
+      setError('Could not calculate route. Please check your start and end locations.');
     }
 
     setLoading(false);
   };
 
-  const getMarkerIcon = (_color: string) => {
+  const loadChargers = useCallback(async (lat: number, lng: number) => {
+    const data = await searchChargersByLocation(lat, lng, 100, 200, preferredConnectors);
+    setStations(data);
+  }, [preferredConnectors]);
+
+  const getMarkerIcon = (color: string) => {
     return L.divIcon({
       className: '',
-      html: `<div style="width:24px;height:24px;background:${_color};border:2px solid white;border-radius:50%;box-shadow:0 2px 4px rgba(0,0,0,0.3);"></div>`,
+      html: `<div style="width:24px;height:24px;background:${color};border:2px solid white;border-radius:50%;box-shadow:0 2px 4px rgba(0,0,0,0.3);"></div>`,
       iconSize: [24, 24],
       iconAnchor: [12, 12],
     });
@@ -163,64 +301,66 @@ export default function RoutePlanPage() {
 
         {!selectedVehicle && (
           <div className="p-3 rounded-lg bg-[#f59e0b]/10 border border-[#f59e0b]/30 text-[#f59e0b] text-sm">
-            Please select a vehicle first
+            Please select a vehicle first from Dashboard
           </div>
         )}
 
-        <div>
-          <label className="block text-sm text-[#94a3b8] mb-1">Start Location</label>
-          <div className="flex gap-2">
-            <input
-              type="text"
-              value={startAddress}
-              onChange={(e) => setStartAddress(e.target.value)}
-              onBlur={() => handleGeocode(startAddress, 'start')}
-              placeholder="Enter address or click map"
-              className="input-field flex-1"
-            />
-            <button
-              onClick={() => setPlacing(placing === 'start' ? null : 'start')}
-              className={`px-3 rounded-lg text-sm font-medium ${placing === 'start' ? 'bg-[#10b981] text-white' : 'bg-[#334155] text-[#94a3b8]'}`}
-            >
-              📍
-            </button>
+        {error && (
+          <div className="p-3 rounded-lg bg-[#ef4444]/10 border border-[#ef4444]/30 text-[#ef4444] text-sm">
+            {error}
           </div>
-          {startCoords && (
-            <p className="text-xs text-[#10b981] mt-1">
-              {startCoords[0].toFixed(5)}, {startCoords[1].toFixed(5)}
-            </p>
-          )}
-        </div>
+        )}
 
-        <div>
-          <label className="block text-sm text-[#94a3b8] mb-1">End Location</label>
-          <div className="flex gap-2">
-            <input
-              type="text"
-              value={endAddress}
-              onChange={(e) => setEndAddress(e.target.value)}
-              onBlur={() => handleGeocode(endAddress, 'end')}
-              placeholder="Enter address or click map"
-              className="input-field flex-1"
-            />
-            <button
-              onClick={() => setPlacing(placing === 'end' ? null : 'end')}
-              className={`px-3 rounded-lg text-sm font-medium ${placing === 'end' ? 'bg-[#ef4444] text-white' : 'bg-[#334155] text-[#94a3b8]'}`}
-            >
-              📍
-            </button>
-          </div>
-          {endCoords && (
-            <p className="text-xs text-[#10b981] mt-1">
-              {endCoords[0].toFixed(5)}, {endCoords[1].toFixed(5)}
-            </p>
-          )}
-        </div>
+        <LocationSearch
+          label="Start Location"
+          value={startAddress}
+          onChange={setStartAddress}
+          onSelect={handleStartSelect}
+        />
 
         {placing && (
           <div className="p-2 rounded-lg bg-[#3b82f6]/10 border border-[#3b82f6]/30 text-[#3b82f6] text-sm text-center">
             Click on the map to set {placing} location
           </div>
+        )}
+
+        {!placing && (
+          <div className="flex gap-2">
+            <button
+              onClick={() => setPlacing('start')}
+              className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
+                startCoords ? 'bg-[#22c55e]/20 text-[#22c55e]' : 'bg-[#334155] text-[#94a3b8]'
+              }`}
+            >
+              🟢 Set Start on Map
+            </button>
+            <button
+              onClick={() => setPlacing('end')}
+              className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
+                endCoords ? 'bg-[#ef4444]/20 text-[#ef4444]' : 'bg-[#334155] text-[#94a3b8]'
+              }`}
+            >
+              🔴 Set End on Map
+            </button>
+          </div>
+        )}
+
+        <LocationSearch
+          label="End Location"
+          value={endAddress}
+          onChange={setEndAddress}
+          onSelect={handleEndSelect}
+        />
+
+        {startCoords && (
+          <p className="text-xs text-[#10b981]">
+            Start: {startCoords[0].toFixed(5)}, {startCoords[1].toFixed(5)}
+          </p>
+        )}
+        {endCoords && (
+          <p className="text-xs text-[#ef4444]">
+            End: {endCoords[0].toFixed(5)}, {endCoords[1].toFixed(5)}
+          </p>
         )}
 
         <div>
@@ -338,13 +478,12 @@ export default function RoutePlanPage() {
           center={mapCenter}
           zoom={8}
           className="h-full w-full"
-          ref={mapRef}
         >
           <TileLayer
             attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           />
-          <MapEvents onMapClick={handleMapClick} />
+          <MapEventsHandler onMapClick={handleMapClick} />
           {bounds && <FitBounds bounds={bounds} />}
 
           {startCoords && <Marker position={startCoords} icon={getMarkerIcon('#10b981')} />}
