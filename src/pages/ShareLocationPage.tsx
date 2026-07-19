@@ -1,10 +1,12 @@
 import { useState, useEffect } from 'react';
+import { db, isFirebaseConfigured } from '../config/firebase';
 import { ref, set, onValue, update } from 'firebase/database';
-import { db } from '../config/firebase';
 import { useAuth } from '../context/AuthContext';
 import { useVehicle } from '../context/VehicleContext';
 import { QRCodeSVG } from 'qrcode.react';
 import type { LocationShare } from '../types';
+
+const DEMO_SHARE_KEY = 'evrp_demo_share';
 
 export default function ShareLocationPage() {
   const { currentUser, userData } = useAuth();
@@ -59,9 +61,42 @@ export default function ShareLocationPage() {
           expiresAt: Date.now() + expiresIn * 60 * 1000,
         };
 
-        set(ref(db, `locationShares/${id}`), shareData);
+        if (isFirebaseConfigured && db) {
+          set(ref(db, `locationShares/${id}`), shareData);
+        } else {
+          localStorage.setItem(`${DEMO_SHARE_KEY}_${id}`, JSON.stringify(shareData));
+        }
       },
-      (err) => console.error('Geolocation error:', err),
+      (err) => {
+        console.error('Geolocation error:', err);
+        // Fallback: use a default location for demo
+        const demoLoc = { lat: 45.815, lng: 15.982 }; // Zagreb
+        setLocation(demoLoc);
+
+        const shareData: LocationShare = {
+          id,
+          userId: currentUser.uid,
+          userName: userData?.displayName || 'Anonymous',
+          vehicleName: selectedVehicle?.name,
+          latitude: demoLoc.lat,
+          longitude: demoLoc.lng,
+          speed: 0,
+          heading: 0,
+          batteryPercent: selectedVehicle?.socPercent || 0,
+          estimatedRangeKm: selectedVehicle
+            ? Math.round((selectedVehicle.usableBatteryKwh * (selectedVehicle.sohPercent / 100) * (selectedVehicle.socPercent / 100)) / (selectedVehicle.consumptionKwhPer100km / 100))
+            : 0,
+          timestamp: Date.now(),
+          isActive: true,
+          expiresAt: Date.now() + expiresIn * 60 * 1000,
+        };
+
+        if (isFirebaseConfigured && db) {
+          set(ref(db, `locationShares/${id}`), shareData);
+        } else {
+          localStorage.setItem(`${DEMO_SHARE_KEY}_${id}`, JSON.stringify(shareData));
+        }
+      },
       { enableHighAccuracy: true, maximumAge: 5000, timeout: 10000 }
     );
 
@@ -75,7 +110,16 @@ export default function ShareLocationPage() {
       setWatchId(null);
     }
     if (shareId) {
-      await update(ref(db, `locationShares/${shareId}`), { isActive: false });
+      if (isFirebaseConfigured && db) {
+        await update(ref(db, `locationShares/${shareId}`), { isActive: false });
+      } else {
+        const stored = localStorage.getItem(`${DEMO_SHARE_KEY}_${shareId}`);
+        if (stored) {
+          const data = JSON.parse(stored);
+          data.isActive = false;
+          localStorage.setItem(`${DEMO_SHARE_KEY}_${shareId}`, JSON.stringify(data));
+        }
+      }
     }
     setIsSharing(false);
     setShareId('');
@@ -84,14 +128,23 @@ export default function ShareLocationPage() {
   };
 
   const viewSharedLocation = (id: string) => {
-    const locRef = ref(db, `locationShares/${id}`);
-    onValue(locRef, (snapshot) => {
-      if (snapshot.exists()) {
-        setSharedLocation(snapshot.val() as LocationShare);
+    if (isFirebaseConfigured && db) {
+      const locRef = ref(db, `locationShares/${id}`);
+      onValue(locRef, (snapshot) => {
+        if (snapshot.exists()) {
+          setSharedLocation(snapshot.val() as LocationShare);
+        } else {
+          setSharedLocation(null);
+        }
+      });
+    } else {
+      const stored = localStorage.getItem(`${DEMO_SHARE_KEY}_${id}`);
+      if (stored) {
+        setSharedLocation(JSON.parse(stored));
       } else {
         setSharedLocation(null);
       }
-    });
+    }
   };
 
   const shareToWhatsApp = () => {
@@ -111,7 +164,10 @@ export default function ShareLocationPage() {
   return (
     <div className="h-full overflow-y-auto p-4 md:p-6 max-w-3xl mx-auto">
       <h2 className="text-2xl font-bold mb-1">Share Location</h2>
-      <p className="text-[#94a3b8] mb-6">Share your real-time location with friends and family</p>
+      <p className="text-[#94a3b8] mb-6">
+        Share your real-time location with friends and family
+        {!isFirebaseConfigured && <span className="text-[#f59e0b]"> (Demo Mode)</span>}
+      </p>
 
       <div className="flex gap-2 mb-6">
         <button

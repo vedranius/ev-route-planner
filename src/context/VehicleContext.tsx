@@ -13,6 +13,34 @@ interface VehicleContextType {
   updateSoc: (id: string, soc: number) => void;
 }
 
+const VEHICLES_KEY = 'evrp_vehicles';
+const SELECTED_VEHICLE_KEY = 'evrp_selected_vehicle';
+
+function loadLocalVehicles(): UserVehicle[] {
+  try {
+    return JSON.parse(localStorage.getItem(VEHICLES_KEY) || '[]');
+  } catch {
+    return [];
+  }
+}
+
+function saveLocalVehicles(vehicles: UserVehicle[]) {
+  localStorage.setItem(VEHICLES_KEY, JSON.stringify(vehicles));
+}
+
+function loadSelectedVehicle(): UserVehicle | null {
+  try {
+    return JSON.parse(localStorage.getItem(SELECTED_VEHICLE_KEY) || 'null');
+  } catch {
+    return null;
+  }
+}
+
+function saveSelectedVehicle(vehicle: UserVehicle | null) {
+  if (vehicle) localStorage.setItem(SELECTED_VEHICLE_KEY, JSON.stringify(vehicle));
+  else localStorage.removeItem(SELECTED_VEHICLE_KEY);
+}
+
 const VehicleContext = createContext<VehicleContextType | undefined>(undefined);
 
 export function useVehicle() {
@@ -23,12 +51,13 @@ export function useVehicle() {
 
 export function VehicleProvider({ children }: { children: ReactNode }) {
   const { userData, updateUserData } = useAuth();
-  const [selectedVehicle, setSelectedVehicle] = useState<UserVehicle | null>(null);
+  const [selectedVehicle, setSelectedVehicle] = useState<UserVehicle | null>(() => loadSelectedVehicle());
 
-  const vehicles = userData?.vehicles || [];
+  const vehicles = userData?.vehicles || loadLocalVehicles();
 
   const selectVehicle = useCallback((vehicle: UserVehicle) => {
     setSelectedVehicle(vehicle);
+    saveSelectedVehicle(vehicle);
   }, []);
 
   const addVehicle = useCallback(
@@ -53,6 +82,7 @@ export function VehicleProvider({ children }: { children: ReactNode }) {
 
       const updatedVehicles = [...vehicles, newVehicle];
       updateUserData({ vehicles: updatedVehicles } as any);
+      saveLocalVehicles(updatedVehicles);
       return newVehicle;
     },
     [vehicles, updateUserData]
@@ -62,8 +92,11 @@ export function VehicleProvider({ children }: { children: ReactNode }) {
     (id: string, data: Partial<UserVehicle>) => {
       const updatedVehicles = vehicles.map((v) => (v.id === id ? { ...v, ...data } : v));
       updateUserData({ vehicles: updatedVehicles } as any);
+      saveLocalVehicles(updatedVehicles);
       if (selectedVehicle?.id === id) {
-        setSelectedVehicle((prev) => (prev ? { ...prev, ...data } : null));
+        const updated = { ...selectedVehicle, ...data };
+        setSelectedVehicle(updated);
+        saveSelectedVehicle(updated);
       }
     },
     [vehicles, selectedVehicle, updateUserData]
@@ -73,8 +106,10 @@ export function VehicleProvider({ children }: { children: ReactNode }) {
     (id: string) => {
       const updatedVehicles = vehicles.filter((v) => v.id !== id);
       updateUserData({ vehicles: updatedVehicles } as any);
+      saveLocalVehicles(updatedVehicles);
       if (selectedVehicle?.id === id) {
         setSelectedVehicle(null);
+        saveSelectedVehicle(null);
       }
     },
     [vehicles, selectedVehicle, updateUserData]

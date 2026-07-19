@@ -9,11 +9,19 @@ import {
   type User as FirebaseUser,
 } from 'firebase/auth';
 import { ref, set, get, update } from 'firebase/database';
-import { auth, googleProvider, db } from '../config/firebase';
+import { auth, googleProvider, db, isFirebaseConfigured } from '../config/firebase';
 import type { User } from '../types';
 
+interface DemoUser {
+  uid: string;
+  email: string;
+  displayName: string;
+  photoURL: string | null;
+  emailVerified: boolean;
+}
+
 interface AuthContextType {
-  currentUser: FirebaseUser | null;
+  currentUser: FirebaseUser | DemoUser | null;
   userData: User | null;
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
@@ -32,12 +40,46 @@ export function useAuth() {
   return context;
 }
 
+const DEMO_USER_KEY = 'evrp_demo_user';
+const DEMO_USER_DATA_KEY = 'evrp_demo_user_data';
+
+function getDemoUser(): DemoUser | null {
+  const stored = localStorage.getItem(DEMO_USER_KEY);
+  return stored ? JSON.parse(stored) : null;
+}
+
+function setDemoUser(user: DemoUser | null) {
+  if (user) localStorage.setItem(DEMO_USER_KEY, JSON.stringify(user));
+  else localStorage.removeItem(DEMO_USER_KEY);
+}
+
+function getDemoUserData(): User | null {
+  const stored = localStorage.getItem(DEMO_USER_DATA_KEY);
+  return stored ? JSON.parse(stored) : null;
+}
+
+function setDemoUserData(data: User | null) {
+  if (data) localStorage.setItem(DEMO_USER_DATA_KEY, JSON.stringify(data));
+  else localStorage.removeItem(DEMO_USER_DATA_KEY);
+}
+
+function createDemoUser(email: string, displayName: string): DemoUser {
+  return {
+    uid: `demo-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+    email,
+    displayName,
+    photoURL: null,
+    emailVerified: true,
+  };
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [currentUser, setCurrentUser] = useState<FirebaseUser | null>(null);
+  const [currentUser, setCurrentUser] = useState<FirebaseUser | DemoUser | null>(null);
   const [userData, setUserData] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const loadUserData = useCallback(async (user: FirebaseUser) => {
+  const loadUserDataFirebase = useCallback(async (user: FirebaseUser) => {
+    if (!db) return;
     const userRef = ref(db, `users/${user.uid}`);
     const snapshot = await get(userRef);
     if (snapshot.exists()) {
@@ -57,52 +99,126 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const loadUserDataDemo = useCallback((user: DemoUser) => {
+    let data = getDemoUserData();
+    if (!data) {
+      data = {
+        uid: user.uid,
+        email: user.email,
+        displayName: user.displayName,
+        twoFactorEnabled: false,
+        vehicles: [],
+        createdAt: Date.now(),
+      };
+      setDemoUserData(data);
+    }
+    setUserData(data);
+  }, []);
+
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      setCurrentUser(user);
-      if (user) {
-        await loadUserData(user);
-      } else {
-        setUserData(null);
+    if (isFirebaseConfigured && auth) {
+      const unsubscribe = onAuthStateChanged(auth, async (user) => {
+        setCurrentUser(user);
+        if (user) {
+          await loadUserDataFirebase(user);
+        } else {
+          setUserData(null);
+        }
+        setLoading(false);
+      });
+      return unsubscribe;
+    } else {
+      const demoUser = getDemoUser();
+      setCurrentUser(demoUser);
+      if (demoUser) {
+        loadUserDataDemo(demoUser);
       }
       setLoading(false);
-    });
-    return unsubscribe;
-  }, [loadUserData]);
+    }
+  }, [loadUserDataFirebase, loadUserDataDemo]);
 
   const login = async (email: string, password: string) => {
-    await signInWithEmailAndPassword(auth, email, password);
+    if (isFirebaseConfigured && auth) {
+      await signInWithEmailAndPassword(auth, email, password);
+    } else {
+      const demoUser = getDemoUser();
+      if (demoUser && demoUser.email === email) {
+        setCurrentUser(demoUser);
+        loadUserDataDemo(demoUser);
+        return;
+      }
+      const newUser = createDemoUser(email, email.split('@')[0]);
+      setDemoUser(newUser);
+      setCurrentUser(newUser);
+      loadUserDataDemo(newUser);
+    }
   };
 
-  const register = async (email: string, password: string, displayName: string) => {
-    const cred = await createUserWithEmailAndPassword(auth, email, password);
-    await sendEmailVerification(cred.user);
-    await update(ref(db, `users/${cred.user.uid}`), {
-      displayName,
-      email,
-      createdAt: Date.now(),
-    });
+  const register = async (email: string, _password: string, displayName: string) => {
+    if (isFirebaseConfigured && auth) {
+      const cred = await createUserWithEmailAndPassword(auth, email, _password);
+      if (!cred.user.emailVerified) {
+        await sendEmailVerification(cred.user);
+      }
+      if (db) {
+        await update(ref(db, `users/${cred.user.uid}`), {
+          displayName,
+          email,
+          createdAt: Date.now(),
+        });
+      }
+    } else {
+      const newUser = createDemoUser(email, displayName);
+      setDemoUser(newUser);
+      setCurrentUser(newUser);
+      const userData: User = {
+        uid: newUser.uid,
+        email,
+        displayName,
+        twoFactorEnabled: false,
+        vehicles: [],
+        createdAt: Date.now(),
+      };
+      setDemoUserData(userData);
+      setUserData(userData);
+    }
   };
 
   const loginWithGoogle = async () => {
-    await signInWithPopup(auth, googleProvider);
+    if (isFirebaseConfigured && auth && googleProvider) {
+      await signInWithPopup(auth, googleProvider);
+    } else {
+      const newUser = createDemoUser('demo@evrplanner.com', 'Demo User');
+      setDemoUser(newUser);
+      setCurrentUser(newUser);
+      loadUserDataDemo(newUser);
+    }
   };
 
   const logout = async () => {
-    await signOut(auth);
+    if (isFirebaseConfigured && auth) {
+      await signOut(auth);
+    }
+    setDemoUser(null);
     setUserData(null);
+    setCurrentUser(null);
   };
 
   const updateUserData = async (data: Partial<User>) => {
-    if (!currentUser) return;
-    const userRef = ref(db, `users/${currentUser.uid}`);
-    await update(userRef, data);
-    setUserData((prev) => (prev ? { ...prev, ...data } : null));
+    if (isFirebaseConfigured && currentUser && db && 'uid' in currentUser) {
+      const userRef = ref(db, `users/${currentUser.uid}`);
+      await update(userRef, data);
+    }
+    setUserData((prev) => {
+      const updated = prev ? { ...prev, ...data } : null;
+      if (updated) setDemoUserData(updated);
+      return updated;
+    });
   };
 
   const sendVerification = async () => {
-    if (currentUser && !currentUser.emailVerified) {
-      await sendEmailVerification(currentUser);
+    if (isFirebaseConfigured && auth && currentUser && 'emailVerified' in currentUser && !currentUser.emailVerified) {
+      await sendEmailVerification(currentUser as FirebaseUser);
     }
   };
 
