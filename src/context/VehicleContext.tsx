@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from 'react';
+import { createContext, useContext, useState, useCallback, useEffect, useRef, type ReactNode } from 'react';
 import type { UserVehicle } from '../types';
 import type { VehicleSpec } from '../data/vehicles';
 import { useAuth } from './AuthContext';
@@ -53,24 +53,23 @@ export function VehicleProvider({ children }: { children: ReactNode }) {
   const { userData, updateUserData } = useAuth();
   const [selectedVehicle, setSelectedVehicle] = useState<UserVehicle | null>(() => loadSelectedVehicle());
   const [localVehicles, setLocalVehicles] = useState<UserVehicle[]>(() => loadLocalVehicles());
+  const firebaseSyncedRef = useRef(false);
 
-  const vehicles = userData?.vehicles && userData.vehicles.length > 0 ? userData.vehicles : localVehicles;
-
-  // Sync Firebase vehicles to localStorage when they load
+  // Merge Firebase vehicles into local - never let Firebase empty array overwrite local data
   useEffect(() => {
     if (userData?.vehicles && userData.vehicles.length > 0) {
-      saveLocalVehicles(userData.vehicles);
-      setLocalVehicles(userData.vehicles);
-      // Also sync selected vehicle if it's not in the current vehicles
-      if (selectedVehicle) {
-        const found = userData.vehicles.find((v) => v.id === selectedVehicle.id);
-        if (!found && userData.vehicles.length > 0) {
-          setSelectedVehicle(userData.vehicles[0]);
-          saveSelectedVehicle(userData.vehicles[0]);
-        }
+      const firebaseIds = new Set(userData.vehicles.map((v) => v.id));
+      const localOnly = localVehicles.filter((v) => !firebaseIds.has(v.id));
+      const merged = [...userData.vehicles, ...localOnly];
+      if (JSON.stringify(merged) !== JSON.stringify(localVehicles)) {
+        setLocalVehicles(merged);
+        saveLocalVehicles(merged);
       }
+      firebaseSyncedRef.current = true;
     }
   }, [userData?.vehicles]);
+
+  const vehicles = localVehicles;
 
   const selectVehicle = useCallback((vehicle: UserVehicle) => {
     setSelectedVehicle(vehicle);
@@ -97,39 +96,42 @@ export function VehicleProvider({ children }: { children: ReactNode }) {
         ...customData,
       };
 
-      const updatedVehicles = [...vehicles, newVehicle];
-      updateUserData({ vehicles: updatedVehicles } as any);
+      const updatedVehicles = [...localVehicles, newVehicle];
+      setLocalVehicles(updatedVehicles);
       saveLocalVehicles(updatedVehicles);
+      updateUserData({ vehicles: updatedVehicles } as any);
       return newVehicle;
     },
-    [vehicles, updateUserData]
+    [localVehicles, updateUserData]
   );
 
   const updateVehicle = useCallback(
     (id: string, data: Partial<UserVehicle>) => {
-      const updatedVehicles = vehicles.map((v) => (v.id === id ? { ...v, ...data } : v));
-      updateUserData({ vehicles: updatedVehicles } as any);
+      const updatedVehicles = localVehicles.map((v) => (v.id === id ? { ...v, ...data } : v));
+      setLocalVehicles(updatedVehicles);
       saveLocalVehicles(updatedVehicles);
+      updateUserData({ vehicles: updatedVehicles } as any);
       if (selectedVehicle?.id === id) {
         const updated = { ...selectedVehicle, ...data };
         setSelectedVehicle(updated);
         saveSelectedVehicle(updated);
       }
     },
-    [vehicles, selectedVehicle, updateUserData]
+    [localVehicles, selectedVehicle, updateUserData]
   );
 
   const removeVehicle = useCallback(
     (id: string) => {
-      const updatedVehicles = vehicles.filter((v) => v.id !== id);
-      updateUserData({ vehicles: updatedVehicles } as any);
+      const updatedVehicles = localVehicles.filter((v) => v.id !== id);
+      setLocalVehicles(updatedVehicles);
       saveLocalVehicles(updatedVehicles);
+      updateUserData({ vehicles: updatedVehicles } as any);
       if (selectedVehicle?.id === id) {
         setSelectedVehicle(null);
         saveSelectedVehicle(null);
       }
     },
-    [vehicles, selectedVehicle, updateUserData]
+    [localVehicles, selectedVehicle, updateUserData]
   );
 
   const updateSoc = useCallback(

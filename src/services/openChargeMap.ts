@@ -135,8 +135,8 @@ export async function searchChargersByLocation(
   });
 
   if (connectionTypes && connectionTypes.length > 0) {
-    const typeIds = connectionTypes.map((t) => getOCMConnectionTypeId(t).toString());
-    params.append('connectiontypeid', typeIds.join(','));
+    const typeIds = connectionTypes.flatMap((t) => getOCMConnectionTypeIds(t));
+    params.append('connectiontypeid', [...new Set(typeIds)].join(','));
   }
 
   try {
@@ -166,8 +166,8 @@ export async function searchChargersByBounds(
   });
 
   if (connectionTypes && connectionTypes.length > 0) {
-    const typeIds = connectionTypes.map((t) => getOCMConnectionTypeId(t).toString());
-    params.append('connectiontypeid', typeIds.join(','));
+    const typeIds = connectionTypes.flatMap((t) => getOCMConnectionTypeIds(t));
+    params.append('connectiontypeid', [...new Set(typeIds)].join(','));
   }
 
   try {
@@ -248,18 +248,18 @@ function mapOCMToStation(poi: any): ChargerStation | null {
   };
 }
 
-function getOCMConnectionTypeId(type: ConnectorType): number {
-  const map: Record<ConnectorType, number> = {
-    type1: 1,
-    type2: 1022,
-    ccs: 36,
-    chademo: 27,
-    tesla: 27,
-    gb_t: 1025,
-    scame: 16,
-    other: 1,
+function getOCMConnectionTypeIds(type: ConnectorType): number[] {
+  const map: Record<ConnectorType, number[]> = {
+    type1: [1],
+    type2: [2, 1022, 1026, 29, 30, 31, 1035],
+    ccs: [25, 32, 36, 1021, 1027, 1036],
+    chademo: [3, 27, 1023],
+    tesla: [30, 33, 8, 9, 1024],
+    gb_t: [14, 15, 1025],
+    scame: [16],
+    other: [0],
   };
-  return map[type] || 1;
+  return map[type] || [0];
 }
 
 export async function getReferenceData(): Promise<any> {
