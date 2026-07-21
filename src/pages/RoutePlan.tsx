@@ -613,44 +613,92 @@ export default function RoutePlanPage() {
             </div>
 
             {route.stops.length > 0 && (
-              <div className="space-y-2">
-                <h4 className="text-sm font-semibold text-[#94a3b8]">Charging Stops</h4>
+              <div className="space-y-0 mt-1">
+                <h4 className="text-sm font-semibold text-[#94a3b8] mb-2">Charging Stops</h4>
+
+                {/* Visual timeline */}
                 {route.stops.map((stop, i) => (
-                  <div key={i} className="p-2 rounded-lg bg-[#0f172a] text-sm">
-                    <p className="font-medium">{stop.chargerStation.name}</p>
-                    <div className="flex justify-between text-xs text-[#94a3b8] mt-1">
-                      <span>Arrive: {stop.arrivalSocPercent}% SoC</span>
-                      <span>Depart: {stop.departureSocPercent}% SoC</span>
-                    </div>
-                    <div className="flex justify-between text-xs text-[#94a3b8]">
-                      <span>Charge time: ~{stop.chargeTimeMinutes} min</span>
-                      <span>Power: {stop.selectedConnection.powerKw} kW</span>
-                    </div>
-                    <p className="text-xs text-[#94a3b8] mt-1">
-                      {stop.chargerStation.connections.map((c) => CONNECTOR_LABELS[c.type]).join(', ')}
-                    </p>
-                    <div className="flex gap-1.5 mt-1.5">
-                      <a
-                        href={`https://www.plugshare.com/?latitude=${stop.chargerStation.latitude}&longitude=${stop.chargerStation.longitude}&zoom=16`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-[10px] bg-orange-500/20 text-orange-400 px-2 py-0.5 rounded hover:bg-orange-500/30"
-                        title="Reviews on PlugShare"
-                      >
-                        PlugShare ↗
-                      </a>
-                      {stop.chargerStation.ocmId && (
+                  <div key={i} className="relative pl-6">
+                    {/* Timeline line */}
+                    <div className="absolute left-2 top-0 bottom-0 w-0.5 bg-[#334155]" />
+                    {/* Timeline dot */}
+                    <div className="absolute left-0.5 top-3 w-3 h-3 rounded-full bg-[#f59e0b] border-2 border-[#0f172a] z-10" />
+
+                    <div className="p-2.5 rounded-lg bg-[#0f172a] border border-[#334155] mb-1 text-sm">
+                      {/* Header */}
+                      <div className="flex items-start justify-between gap-1 mb-2">
+                        <div className="min-w-0">
+                          <p className="font-semibold text-[#f1f5f9] text-xs leading-tight">{stop.chargerStation.name}</p>
+                          <p className="text-[10px] text-[#64748b]">{stop.chargerStation.city}</p>
+                        </div>
+                        <span className="text-[10px] bg-[#f59e0b]/20 text-[#f59e0b] px-1.5 py-0.5 rounded shrink-0 font-medium">
+                          Stop {i + 1}
+                        </span>
+                      </div>
+
+                      {/* SoC bars */}
+                      <div className="space-y-1 mb-2">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[10px] text-[#94a3b8] w-11 shrink-0">Arrive</span>
+                          <div className="flex-1 h-1.5 bg-[#334155] rounded-full overflow-hidden">
+                            <div
+                              className="h-full rounded-full transition-all"
+                              style={{
+                                width: `${stop.arrivalSocPercent}%`,
+                                background: stop.arrivalSocPercent <= 15 ? '#ef4444' : stop.arrivalSocPercent <= 30 ? '#f59e0b' : '#22c55e'
+                              }}
+                            />
+                          </div>
+                          <span className="text-[10px] font-bold w-7 text-right" style={{
+                            color: stop.arrivalSocPercent <= 15 ? '#ef4444' : stop.arrivalSocPercent <= 30 ? '#f59e0b' : '#22c55e'
+                          }}>
+                            {stop.arrivalSocPercent}%
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[10px] text-[#94a3b8] w-11 shrink-0">Depart</span>
+                          <div className="flex-1 h-1.5 bg-[#334155] rounded-full overflow-hidden">
+                            <div className="h-full rounded-full bg-[#10b981]" style={{ width: `${stop.departureSocPercent}%` }} />
+                          </div>
+                          <span className="text-[10px] font-bold text-[#10b981] w-7 text-right">{stop.departureSocPercent}%</span>
+                        </div>
+                      </div>
+
+                      {/* Stats row */}
+                      <div className="flex gap-2 text-[10px] text-[#94a3b8] mb-2">
+                        <span>⏱ ~{stop.chargeTimeMinutes} min</span>
+                        <span>⚡ {stop.selectedConnection.powerKw} kW</span>
+                        <span>{stop.chargerStation.connections.filter(c => c.level === 3).length > 0 ? 'DC' : 'AC'}</span>
+                      </div>
+
+                      {/* Action links */}
+                      <div className="flex gap-1.5">
                         <a
-                          href={`https://abetterrouteplanner.com/?charger=${stop.chargerStation.ocmId}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-[10px] bg-purple-500/20 text-purple-400 px-2 py-0.5 rounded hover:bg-purple-500/30"
-                          title="View in ABRP"
-                        >
-                          ABRP ↗
-                        </a>
-                      )}
+                          href={`https://www.google.com/maps/dir/?api=1&destination=${stop.chargerStation.latitude},${stop.chargerStation.longitude}`}
+                          target="_blank" rel="noopener noreferrer"
+                          className="text-[10px] bg-blue-500/20 text-blue-400 px-2 py-0.5 rounded hover:bg-blue-500/30"
+                        >Navigate</a>
+                        <a
+                          href={`https://www.plugshare.com/?latitude=${stop.chargerStation.latitude}&longitude=${stop.chargerStation.longitude}&zoom=16`}
+                          target="_blank" rel="noopener noreferrer"
+                          className="text-[10px] bg-orange-500/20 text-orange-400 px-2 py-0.5 rounded hover:bg-orange-500/30"
+                        >PlugShare ↗</a>
+                        {stop.chargerStation.ocmId && (
+                          <a
+                            href={`https://www.chargeprice.app/?poi_id=${stop.chargerStation.ocmId}&poi_source=open_charge_map`}
+                            target="_blank" rel="noopener noreferrer"
+                            className="text-[10px] bg-teal-500/20 text-teal-400 px-2 py-0.5 rounded hover:bg-teal-500/30"
+                          >Prices 💶</a>
+                        )}
+                      </div>
                     </div>
+
+                    {/* Driving segment below */}
+                    {i < route.stops.length - 1 && (
+                      <div className="text-[10px] text-[#64748b] pl-1 py-1">
+                        ↓ {stop.distanceToNextKm > 0 ? `${stop.distanceToNextKm} km` : 'next stop'}
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
@@ -666,8 +714,8 @@ export default function RoutePlanPage() {
           className="h-full w-full"
         >
           <TileLayer
-            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
+            url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
           />
           <MapEventsHandler onMapClick={handleMapClick} />
           {bounds && <FitBounds bounds={bounds} />}

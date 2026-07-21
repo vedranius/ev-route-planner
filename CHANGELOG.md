@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.1.0] - 2026-07-21
+
+### New Features
+- **Dark map tiles**: Switched to CartoDB Dark Matter tiles — maps now match the dark UI instead of bright OpenStreetMap tiles
+- **Min power filter**: Filter chargers by minimum power (All / 22kW+ / 50kW+ / 100kW+ / 150kW+ / 350kW+) on the Chargers page
+- **Charger photos**: Photos from OpenChargeMap are now shown in the charger detail panel
+- **Waze navigation**: Added Waze deep link alongside Google Maps in charger actions
+- **Chargeprice integration**: Added Chargeprice.app link to compare charging prices at each station
+- **Visual SoC timeline**: Route stops now show animated battery bars for arrival and departure state of charge
+- **Charging stop actions**: Each route stop now has Navigate, PlugShare and Chargeprice links inline
+
+### Improvements
+- PlugShare links now use coordinate-based URLs (opens map centered on the charger) instead of broken API endpoint
+- ABRP links preserved for charger cross-reference
+- "Open in ABRP" and "PlugShare Map" buttons added to route summary for cross-app comparison
+- GitHub Pages base URL fixed for correct routing at `/ev-route-planner/`
+
 ## [1.0.3] - 2026-07-19
 
 ### Bug Fixes
@@ -41,7 +58,7 @@
 #### Real-Time Features
 - **Location Sharing**: Share real-time GPS location via link, QR code, WhatsApp, Telegram
 - **EV Community Chat**: Real-time chat between EV drivers using Firebase Realtime Database
-- **OVMS Integration**: Connect Open Vehicle Monitoring System for live vehicle data (SoC, SoH, speed, range, charging status)
+- **OVMS Integration**: Connect Open Vehicle Monitoring System for live vehicle data (SoC, SoH, speed, charging status)
 
 #### Navigation & Routing
 - OSRM routing engine for optimal route calculation
@@ -62,4 +79,4 @@
 - OSRM (routing)
 - Nominatim (geocoding)
 - Firebase (auth, database, realtime chat)
-- OpenStreetMap tiles (maps)
+- OpenStreetMap / CartoDB tiles (maps)

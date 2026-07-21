@@ -134,6 +134,20 @@ function ChargerDetailPanel({ station, onClose }: { station: ChargerStation; onC
         <p className="text-xs text-[#94a3b8]">Access: {station.openingHours}</p>
       )}
 
+      {station.photos.length > 0 && (
+        <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1">
+          {station.photos.slice(0, 4).map((photo, i) => (
+            <img
+              key={i}
+              src={photo}
+              alt={`${station.name} photo ${i + 1}`}
+              className="h-20 w-28 rounded-lg object-cover shrink-0 border border-[#334155]"
+              onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+            />
+          ))}
+        </div>
+      )}
+
       <div className="flex flex-wrap gap-1.5 pt-1">
         <a
           href={`https://www.google.com/maps/dir/?api=1&destination=${station.latitude},${station.longitude}`}
@@ -143,11 +157,20 @@ function ChargerDetailPanel({ station, onClose }: { station: ChargerStation; onC
           Navigate
         </a>
         <a
-          href={`https://www.google.com/maps/search/?api=1&query=${station.latitude},${station.longitude}`}
+          href={`https://waze.com/ul?ll=${station.latitude},${station.longitude}&navigate=yes`}
           target="_blank" rel="noopener noreferrer"
           className="text-[11px] bg-[#334155] text-[#f1f5f9] px-3 py-1.5 rounded-lg hover:bg-[#475569]"
+          title="Navigate with Waze"
         >
-          View on Map
+          Waze
+        </a>
+        <a
+          href={`https://www.chargeprice.app/?poi_id=${station.ocmId}&poi_source=open_charge_map`}
+          target="_blank" rel="noopener noreferrer"
+          className="text-[11px] bg-teal-700 text-white px-3 py-1.5 rounded-lg hover:bg-teal-600"
+          title="Compare charging prices at this station"
+        >
+          Prices 💶
         </a>
         <a
           href={`https://www.plugshare.com/?latitude=${station.latitude}&longitude=${station.longitude}&zoom=16`}
@@ -176,6 +199,7 @@ export default function ChargersPage() {
   const [selectedStation, setSelectedStation] = useState<ChargerStation | null>(null);
   const [filterStatus, setFilterStatus] = useState<ChargerStatus | 'all'>('all');
   const [filterConnectors, setFilterConnectors] = useState<ConnectorType[]>([]);
+  const [minPowerKw, setMinPowerKw] = useState<number>(0);
   const [mapCenter, setMapCenter] = useState<[number, number]>([45.81, 15.98]);
   const [initialLoad, setInitialLoad] = useState(true);
   const mapRef = useRef<any>(null);
@@ -229,6 +253,10 @@ export default function ChargersPage() {
 
   const filteredStations = stations.filter((s) => {
     if (filterStatus !== 'all' && s.status !== filterStatus) return false;
+    if (minPowerKw > 0) {
+      const maxPower = Math.max(...s.connections.map((c) => c.powerKw), 0);
+      if (maxPower < minPowerKw) return false;
+    }
     return true;
   });
 
@@ -281,6 +309,25 @@ export default function ChargersPage() {
                 }`}
               >
                 {status === 'all' ? 'All' : STATUS_LABELS[status]}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div>
+          <label className="block text-sm text-[#94a3b8] mb-2">Min Power</label>
+          <div className="flex flex-wrap gap-1">
+            {([0, 22, 50, 100, 150, 350] as const).map((kw) => (
+              <button
+                key={kw}
+                onClick={() => setMinPowerKw(kw)}
+                className={`px-2 py-1 rounded text-xs font-medium transition-all ${
+                  minPowerKw === kw
+                    ? 'bg-[#10b981] text-white'
+                    : 'bg-[#334155] text-[#94a3b8]'
+                }`}
+              >
+                {kw === 0 ? 'All' : `${kw}kW+`}
               </button>
             ))}
           </div>
@@ -361,8 +408,8 @@ export default function ChargersPage() {
           ref={mapRef}
         >
           <TileLayer
-            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
+            url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
           />
           <MapLoader onReady={handleMapReady} />
           <MapEvents
