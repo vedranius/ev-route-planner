@@ -202,10 +202,11 @@ export default function RoutePlanPage() {
   const [stations, setStations] = useState<ChargerStation[]>([]);
   const [route, setRoute] = useState<RoutePlan | null>(null);
   const [loading, setLoading] = useState(false);
-  const [mapCenter, setMapCenter] = useState<[number, number]>([45.81, 15.98]); // Zagreb, Croatia
+  const [mapCenter, setMapCenter] = useState<[number, number]>([45.81, 15.98]);
   const [placing, setPlacing] = useState<'start' | 'end' | null>(null);
   const [bounds, setBounds] = useState<[[number, number], [number, number]] | null>(null);
   const [error, setError] = useState('');
+  const [waypoints, setWaypoints] = useState<ChargerStation[]>([]);
 
   useEffect(() => {
     if (navigator.geolocation) {
@@ -238,6 +239,17 @@ export default function RoutePlanPage() {
     setEndAddress(address);
   };
 
+  const handleAddWaypoint = useCallback((station: ChargerStation) => {
+    setWaypoints((prev) => {
+      if (prev.some((w) => w.id === station.id)) return prev;
+      return [...prev, station];
+    });
+  }, []);
+
+  const handleRemoveWaypoint = useCallback((stationId: string) => {
+    setWaypoints((prev) => prev.filter((w) => w.id !== stationId));
+  }, []);
+
   const handlePlanRoute = async () => {
     if (!startCoords || !endCoords || !selectedVehicle) {
       setError('Please set both start and end locations and select a vehicle.');
@@ -246,9 +258,12 @@ export default function RoutePlanPage() {
     setError('');
     setLoading(true);
 
+    // Build route coordinates: start → waypoints → end
+    const allCoords: [number, number][] = [startCoords, ...waypoints.map((w) => [w.latitude, w.longitude] as [number, number]), endCoords];
+
     // First get the route to know the path
     const rawRoute = await getOSRMRoute(
-      [startCoords, endCoords],
+      allCoords,
       avoidTolls,
       avoidHighways,
       avoidFerries
@@ -260,8 +275,16 @@ export default function RoutePlanPage() {
       return;
     }
 
-    // Load chargers along the ENTIRE route by sampling points every ~50km
+    // Load chargers along the ENTIRE route
     const loadedStations = await loadChargersAlongRoute(rawRoute.geometry);
+
+    // Merge manual waypoints with auto-found chargers
+    const allStations = [...loadedStations];
+    for (const wp of waypoints) {
+      if (!allStations.some((s) => s.id === wp.id)) {
+        allStations.push(wp);
+      }
+    }
 
     // Now calculate the full route with charging stops
     const routeResult = await calculateFullRoute(
@@ -294,7 +317,7 @@ export default function RoutePlanPage() {
       avoidHighways,
       avoidFerries,
       selectedVehicle.sohPercent,
-      loadedStations,
+      allStations,
       preferredConnectors
     );
 
@@ -513,6 +536,34 @@ export default function RoutePlanPage() {
           {loading ? 'Calculating route...' : 'Plan Route'}
         </button>
 
+        {waypoints.length > 0 && (
+          <div className="card">
+            <h3 className="text-sm font-semibold mb-2 text-[#f59e0b]">Charging Stops ({waypoints.length})</h3>
+            <p className="text-[10px] text-[#64748b] mb-2">Click chargers on map and "Add to Route" to plan charging stops</p>
+            <div className="space-y-1.5">
+              {waypoints.map((wp, i) => (
+                <div key={wp.id} className="flex items-center justify-between p-2 rounded bg-[#1e293b] text-xs">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="text-[#f59e0b] font-bold">{i + 1}</span>
+                    <div className="min-w-0">
+                      <p className="font-medium truncate text-[#f1f5f9]">{wp.name}</p>
+                      <p className="text-[10px] text-[#64748b] truncate">
+                        {wp.connections.filter((c) => c.level === 3).map((c) => `${CONNECTOR_LABELS[c.type]} ${c.powerKw}kW`).join(', ') || 'AC'}
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => handleRemoveWaypoint(wp.id)}
+                    className="text-[#ef4444] hover:text-[#f87171] text-sm shrink-0 ml-2"
+                  >
+                    &times;
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {route && (
           <div className="card fade-in">
             <h3 className="font-semibold mb-2">Route Summary</h3>
@@ -576,6 +627,33 @@ export default function RoutePlanPage() {
           {startCoords && <Marker position={startCoords} icon={getMarkerIcon('#10b981')} />}
           {endCoords && <Marker position={endCoords} icon={getMarkerIcon('#ef4444')} />}
 
+          {waypoints.map((wp) => (
+            <Marker
+              key={`wp-${wp.id}`}
+              position={[wp.latitude, wp.longitude]}
+              icon={L.divIcon({
+                className: '',
+                html: `<div style="width:28px;height:28px;background:#f59e0b;border:3px solid white;border-radius:50%;box-shadow:0 2px 6px rgba(0,0,0,0.4);display:flex;align-items:center;justify-content:center;color:white;font-weight:bold;font-size:12px;">⚡</div>`,
+                iconSize: [28, 28],
+                iconAnchor: [14, 14],
+              })}
+            >
+              <Popup>
+                <div className="min-w-[200px]">
+                  <p className="font-bold text-sm">{wp.name}</p>
+                  <p className="text-xs text-gray-500">{wp.city}</p>
+                  <p className="text-xs text-orange-600 font-medium mt-1">Charging Stop #{waypoints.indexOf(wp) + 1}</p>
+                  <button
+                    onClick={() => handleRemoveWaypoint(wp.id)}
+                    className="mt-2 text-[10px] bg-red-500 text-white px-2 py-1 rounded hover:bg-red-600"
+                  >
+                    Remove from Route
+                  </button>
+                </div>
+              </Popup>
+            </Marker>
+          ))}
+
           {route && route.polyline.length > 0 && (
             <Polyline
               positions={route.polyline}
@@ -620,6 +698,22 @@ export default function RoutePlanPage() {
                     {station.rating > 0 && <span className="ml-2">⭐ {station.rating.toFixed(1)}</span>}
                   </p>
                   <div className="flex flex-wrap gap-1 mt-1">
+                    <button
+                      onClick={() => {
+                        if (waypoints.some((w) => w.id === station.id)) {
+                          handleRemoveWaypoint(station.id);
+                        } else {
+                          handleAddWaypoint(station);
+                        }
+                      }}
+                      className={`text-[10px] px-2 py-1 rounded font-medium ${
+                        waypoints.some((w) => w.id === station.id)
+                          ? 'bg-[#f59e0b] text-white hover:bg-[#d97706]'
+                          : 'bg-[#22c55e] text-white hover:bg-[#16a34a]'
+                      }`}
+                    >
+                      {waypoints.some((w) => w.id === station.id) ? '✓ In Route' : '+ Add to Route'}
+                    </button>
                     <a
                       href={`https://www.google.com/maps/dir/?api=1&destination=${station.latitude},${station.longitude}`}
                       target="_blank"
@@ -631,7 +725,7 @@ export default function RoutePlanPage() {
                     {station.ocmId && (
                       <>
                         <a
-                          href={`https://www.plugshare.com/location/${station.ocmId}`}
+                          href={`https://api.plugshare.com/view/location/${station.ocmId}`}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="text-[10px] bg-orange-500 text-white px-2 py-1 rounded hover:bg-orange-600"
@@ -639,7 +733,7 @@ export default function RoutePlanPage() {
                           PlugShare
                         </a>
                         <a
-                          href={`https://abetterrouteplanner.com/?plugs=${station.ocmId}`}
+                          href={`https://abetterrouteplanner.com/?charger=${station.ocmId}`}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="text-[10px] bg-purple-500 text-white px-2 py-1 rounded hover:bg-purple-600"

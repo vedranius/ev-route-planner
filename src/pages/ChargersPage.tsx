@@ -1,8 +1,8 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, useMap, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import { searchChargersByBounds } from '../services/openChargeMap';
-import type { ChargerStation, ConnectorType, ChargerStatus } from '../types';
+import type { ChargerStation, ConnectorType, ChargerStatus, ChargerConnection } from '../types';
 import { CONNECTOR_LABELS, STATUS_LABELS } from '../types';
 
 function MapLoader({ onReady }: { onReady: (bounds: any) => void }) {
@@ -20,7 +20,7 @@ function MapLoader({ onReady }: { onReady: (bounds: any) => void }) {
   return null;
 }
 
-function MapEvents({ onMoveEnd }: { onMoveEnd: (bounds: any) => void }) {
+function MapEvents({ onMoveEnd, onMapClick }: { onMoveEnd: (bounds: any) => void; onMapClick?: () => void }) {
   useMapEvents({
     moveend(e) {
       const map = e.target;
@@ -30,8 +30,142 @@ function MapEvents({ onMoveEnd }: { onMoveEnd: (bounds: any) => void }) {
         ne: [b.getNorthEast().lat, b.getNorthEast().lng],
       });
     },
+    click() {
+      onMapClick?.();
+    },
   });
   return null;
+}
+
+function ConnectorBadges({ connections }: { connections: ChargerConnection[] }) {
+  const dcConns = connections.filter((c) => c.level === 3);
+  const acConns = connections.filter((c) => c.level !== 3);
+  const maxDc = dcConns.length > 0 ? Math.max(...dcConns.map((c) => c.powerKw)) : 0;
+
+  return (
+    <div className="flex flex-wrap gap-1 mt-1">
+      {dcConns.map((c, i) => (
+        <span key={`dc-${i}`} className="text-[10px] px-1.5 py-0.5 rounded bg-orange-500/20 text-orange-400 font-medium">
+          DC {CONNECTOR_LABELS[c.type]} {c.powerKw}kW
+        </span>
+      ))}
+      {acConns.filter((c) => c.powerKw >= 11).map((c, i) => (
+        <span key={`ac-${i}`} className="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-400 font-medium">
+          AC {CONNECTOR_LABELS[c.type]} {c.powerKw}kW
+        </span>
+      ))}
+      {maxDc === 0 && connections.length > 0 && (
+        <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-500/20 text-gray-400 font-medium">
+          {connections.map((c) => CONNECTOR_LABELS[c.type]).join(', ')} {connections[0]?.powerKw || '?'}kW
+        </span>
+      )}
+    </div>
+  );
+}
+
+function ChargerDetailPanel({ station, onClose }: { station: ChargerStation; onClose: () => void }) {
+  return (
+    <div className="card fade-in space-y-3">
+      <div className="flex items-start justify-between">
+        <div className="flex-1 min-w-0">
+          <h3 className="font-bold text-sm">{station.name}</h3>
+          <p className="text-xs text-[#94a3b8]">{station.address}, {station.city}</p>
+        </div>
+        <button onClick={onClose} className="text-[#64748b] hover:text-white text-lg leading-none">&times;</button>
+      </div>
+
+      {station.operators[0] && (
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-medium text-blue-400">{station.operators[0]}</span>
+          {station.operatorUrl && (
+            <a href={station.operatorUrl} target="_blank" rel="noopener noreferrer" className="text-[10px] text-[#64748b] hover:text-white">
+              website ↗
+            </a>
+          )}
+        </div>
+      )}
+
+      <div className="space-y-1">
+        {station.connections.map((c, i) => {
+          const levelLabel = c.level === 3 ? 'DC' : c.level === 2 ? 'AC' : 'L1';
+          return (
+            <div key={i} className="flex items-center justify-between text-xs">
+              <div className="flex items-center gap-2">
+                <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                  c.level === 3 ? 'bg-orange-500/20 text-orange-400' : 'bg-blue-500/20 text-blue-400'
+                }`}>
+                  {levelLabel}
+                </span>
+                <span className="text-[#f1f5f9]">{CONNECTOR_LABELS[c.type]}</span>
+              </div>
+              <div className="text-right">
+                <span className="font-bold text-[#f1f5f9]">{c.powerKw} kW</span>
+                {c.current > 0 && <span className="text-[#64748b] ml-1">{c.current}A/{c.voltage}V</span>}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="flex items-center gap-2 text-xs">
+        <span className={`font-medium ${
+          station.status === 'available' ? 'text-green-400' :
+          station.status === 'busy' ? 'text-yellow-400' :
+          station.status === 'offline' ? 'text-red-400' : 'text-gray-400'
+        }`}>
+          {STATUS_LABELS[station.status]}
+        </span>
+        {station.rating > 0 && (
+          <span className="text-[#94a3b8]">⭐ {station.rating.toFixed(1)} ({station.reviewCount} reviews)</span>
+        )}
+      </div>
+
+      {station.lastVerified && (
+        <p className="text-[10px] text-[#64748b]">
+          Last verified: {new Date(station.lastVerified).toLocaleDateString()}
+        </p>
+      )}
+
+      {station.costInfo && (
+        <p className="text-xs text-[#94a3b8] bg-[#334155]/50 p-2 rounded">{station.costInfo}</p>
+      )}
+
+      {station.openingHours && (
+        <p className="text-xs text-[#94a3b8]">Access: {station.openingHours}</p>
+      )}
+
+      <div className="flex flex-wrap gap-1.5 pt-1">
+        <a
+          href={`https://www.google.com/maps/dir/?api=1&destination=${station.latitude},${station.longitude}`}
+          target="_blank" rel="noopener noreferrer"
+          className="text-[11px] bg-blue-600 text-white px-3 py-1.5 rounded-lg hover:bg-blue-700 font-medium"
+        >
+          Navigate
+        </a>
+        <a
+          href={`https://www.google.com/maps/search/?api=1&query=${station.latitude},${station.longitude}`}
+          target="_blank" rel="noopener noreferrer"
+          className="text-[11px] bg-[#334155] text-[#f1f5f9] px-3 py-1.5 rounded-lg hover:bg-[#475569]"
+        >
+          View on Map
+        </a>
+        <a
+          href={`https://api.plugshare.com/view/location/${station.ocmId}`}
+          target="_blank" rel="noopener noreferrer"
+          className="text-[11px] bg-orange-600 text-white px-3 py-1.5 rounded-lg hover:bg-orange-700"
+        >
+          PlugShare
+        </a>
+        <a
+          href={`https://abetterrouteplanner.com/?charger=${station.ocmId}`}
+          target="_blank" rel="noopener noreferrer"
+          className="text-[11px] bg-purple-600 text-white px-3 py-1.5 rounded-lg hover:bg-purple-700"
+        >
+          ABRP
+        </a>
+      </div>
+    </div>
+  );
 }
 
 export default function ChargersPage() {
@@ -40,8 +174,9 @@ export default function ChargersPage() {
   const [selectedStation, setSelectedStation] = useState<ChargerStation | null>(null);
   const [filterStatus, setFilterStatus] = useState<ChargerStatus | 'all'>('all');
   const [filterConnectors, setFilterConnectors] = useState<ConnectorType[]>([]);
-  const [mapCenter, setMapCenter] = useState<[number, number]>([45.81, 15.98]); // Zagreb, Croatia
+  const [mapCenter, setMapCenter] = useState<[number, number]>([45.81, 15.98]);
   const [initialLoad, setInitialLoad] = useState(true);
+  const mapRef = useRef<any>(null);
 
   useEffect(() => {
     if (navigator.geolocation) {
@@ -58,18 +193,17 @@ export default function ChargersPage() {
       const data = await searchChargersByBounds(
         bounds.sw[0], bounds.sw[1],
         bounds.ne[0], bounds.ne[1],
-        200,
+        300,
         filterConnectors.length > 0 ? filterConnectors : undefined
       );
       setStations(data);
     } catch (err) {
       console.error('Failed to load chargers:', err);
-      // Retry with location-based search as fallback
       try {
         const centerLat = (bounds.sw[0] + bounds.ne[0]) / 2;
         const centerLng = (bounds.sw[1] + bounds.ne[1]) / 2;
         const { searchChargersByLocation } = await import('../services/openChargeMap');
-        const data = await searchChargersByLocation(centerLat, centerLng, 50, 200, filterConnectors.length > 0 ? filterConnectors : undefined);
+        const data = await searchChargersByLocation(centerLat, centerLng, 50, 300, filterConnectors.length > 0 ? filterConnectors : undefined);
         setStations(data);
       } catch (retryErr) {
         console.error('Retry also failed:', retryErr);
@@ -86,6 +220,10 @@ export default function ChargersPage() {
   const handleMoveEnd = useCallback((bounds: any) => {
     loadChargers(bounds);
   }, [loadChargers]);
+
+  const handleStationClick = useCallback((station: ChargerStation) => {
+    setSelectedStation(station);
+  }, []);
 
   const filteredStations = stations.filter((s) => {
     if (filterStatus !== 'all' && s.status !== filterStatus) return false;
@@ -104,7 +242,7 @@ export default function ChargersPage() {
 
   return (
     <div className="h-full flex flex-col md:flex-row relative">
-      <div className="w-full md:w-80 overflow-y-auto p-4 space-y-3 scrollbar-thin bg-[#0f172a] z-10">
+      <div className="w-full md:w-96 overflow-y-auto p-4 space-y-3 scrollbar-thin bg-[#0f172a] z-10">
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-bold">Find Chargers</h2>
           <span className="text-sm text-[#94a3b8]">{filteredStations.length} found</span>
@@ -119,12 +257,16 @@ export default function ChargersPage() {
 
         {!loading && initialLoad && (
           <div className="p-3 rounded-lg bg-[#3b82f6]/10 border border-[#3b82f6]/30 text-[#3b82f6] text-sm">
-            Loading chargers for your area... Move the map to explore more.
+            Move the map to explore chargers in your area.
           </div>
         )}
 
+        {selectedStation && (
+          <ChargerDetailPanel station={selectedStation} onClose={() => setSelectedStation(null)} />
+        )}
+
         <div>
-          <label className="block text-sm text-[#94a3b8] mb-2">Status Filter</label>
+          <label className="block text-sm text-[#94a3b8] mb-2">Status</label>
           <div className="flex flex-wrap gap-1">
             {(['all', 'available', 'busy', 'offline', 'unknown'] as const).map((status) => (
               <button
@@ -143,7 +285,7 @@ export default function ChargersPage() {
         </div>
 
         <div>
-          <label className="block text-sm text-[#94a3b8] mb-2">Connector Types</label>
+          <label className="block text-sm text-[#94a3b8] mb-2">Connectors</label>
           <div className="flex flex-wrap gap-1">
             {(['ccs', 'type2', 'chademo', 'tesla'] as ConnectorType[]).map((ct) => (
               <button
@@ -163,55 +305,49 @@ export default function ChargersPage() {
               </button>
             ))}
           </div>
+          {filterConnectors.length > 0 && (
+            <p className="text-[10px] text-[#64748b] mt-1">
+              Showing chargers with: {filterConnectors.map((c) => CONNECTOR_LABELS[c]).join(', ')}
+            </p>
+          )}
         </div>
 
-        <div className="space-y-2 max-h-[40vh] overflow-y-auto scrollbar-thin">
-          {filteredStations.slice(0, 50).map((station) => {
-            const dcConns = station.connections.filter((c) => c.level === 3 || c.powerKw >= 20);
-            const maxDcPower = dcConns.length > 0 ? Math.max(...dcConns.map((c) => c.powerKw)) : 0;
-            return (
-              <div
-                key={station.id}
-                className={`card cursor-pointer transition-all ${
-                  selectedStation?.id === station.id ? 'border-[#10b981]' : 'hover:border-[#64748b]'
-                }`}
-                onClick={() => setSelectedStation(station)}
-              >
-                <div className="flex items-start justify-between">
-                  <div className="flex-1 min-w-0">
-                    <p className="font-medium text-sm truncate">{station.name}</p>
-                    <p className="text-xs text-[#64748b] truncate">{station.operators[0] || 'Unknown operator'}</p>
-                    <p className="text-xs text-[#94a3b8] truncate">{station.city}, {station.country}</p>
-                    <div className="flex flex-wrap gap-1 mt-1">
-                      {maxDcPower > 0 && (
-                        <span className="badge badge-yellow text-[10px]">DC {maxDcPower}kW</span>
-                      )}
-                      {station.connections.filter((c) => c.level !== 3 && c.powerKw < 20).length > 0 && (
-                        <span className="badge badge-blue text-[10px]">AC</span>
-                      )}
-                      {station.connections.slice(0, 2).map((c, i) => (
-                        <span key={i} className="badge badge-blue text-[10px]">
-                          {CONNECTOR_LABELS[c.type]} {c.powerKw}kW
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                  <span className={`badge ${
+        <div className="space-y-2 max-h-[50vh] overflow-y-auto scrollbar-thin">
+          {filteredStations.slice(0, 80).map((station) => (
+            <div
+              key={station.id}
+              className={`card cursor-pointer transition-all ${
+                selectedStation?.id === station.id ? 'border-[#10b981] bg-[#10b981]/5' : 'hover:border-[#64748b]'
+              }`}
+              onClick={() => handleStationClick(station)}
+            >
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex-1 min-w-0">
+                  <p className="font-medium text-sm truncate">{station.name}</p>
+                  <p className="text-[10px] text-[#64748b] truncate">{station.operators[0] || ''}</p>
+                  <p className="text-[10px] text-[#64748b] truncate">{station.city}</p>
+                  <ConnectorBadges connections={station.connections} />
+                </div>
+                <div className="flex flex-col items-end gap-1 shrink-0">
+                  <span className={`badge text-[10px] ${
                     station.status === 'available' ? 'badge-green' :
                     station.status === 'busy' ? 'badge-yellow' :
                     station.status === 'offline' ? 'badge-red' : 'badge-gray'
                   }`}>
                     {STATUS_LABELS[station.status]}
                   </span>
+                  {station.rating > 0 && (
+                    <span className="text-[10px] text-[#94a3b8]">⭐ {station.rating.toFixed(1)}</span>
+                  )}
                 </div>
-                {station.rating > 0 && (
-                  <p className="text-xs text-[#94a3b8] mt-1">
-                    ⭐ {station.rating.toFixed(1)} ({station.reviewCount} reviews)
-                  </p>
-                )}
               </div>
-            );
-          })}
+            </div>
+          ))}
+          {filteredStations.length === 0 && !loading && (
+            <p className="text-sm text-[#64748b] text-center py-4">
+              No chargers found. Try different filters or move the map.
+            </p>
+          )}
         </div>
       </div>
 
@@ -220,13 +356,17 @@ export default function ChargersPage() {
           center={mapCenter}
           zoom={12}
           className="h-full w-full"
+          ref={mapRef}
         >
           <TileLayer
             attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           />
           <MapLoader onReady={handleMapReady} />
-          <MapEvents onMoveEnd={handleMoveEnd} />
+          <MapEvents
+            onMoveEnd={handleMoveEnd}
+            onMapClick={() => setSelectedStation(null)}
+          />
 
           {filteredStations.map((station) => (
             <Marker
@@ -242,11 +382,9 @@ export default function ChargersPage() {
                   <p className="font-bold text-sm">{station.name}</p>
                   <p className="text-xs text-gray-500">{station.address}</p>
                   <p className="text-xs text-gray-500">{station.city}, {station.country}</p>
-
                   {station.operators[0] && (
                     <p className="text-xs font-medium text-blue-600 mt-1">{station.operators[0]}</p>
                   )}
-
                   <div className="mt-2 space-y-0.5">
                     {station.connections.map((c, i) => {
                       const levelLabel = c.level === 3 ? 'DC' : c.level === 2 ? 'AC' : '';
@@ -256,12 +394,10 @@ export default function ChargersPage() {
                             {levelLabel}
                           </span>{' '}
                           {CONNECTOR_LABELS[c.type]} - {c.powerKw} kW
-                          {c.current > 0 && <span className="text-gray-400"> ({c.current}A)</span>}
                         </p>
                       );
                     })}
                   </div>
-
                   <div className="mt-2 text-xs">
                     <span className={`font-medium ${
                       station.status === 'available' ? 'text-green-600' :
@@ -270,42 +406,12 @@ export default function ChargersPage() {
                     }`}>
                       {STATUS_LABELS[station.status]}
                     </span>
-                    {station.rating > 0 && <span className="ml-2">⭐ {station.rating.toFixed(1)}</span>}
+                    {station.rating > 0 && <span className="ml-2">⭐ {station.rating.toFixed(1)} ({station.reviewCount})</span>}
                   </div>
-
-                  {station.costInfo && (
-                    <p className="text-xs text-gray-400 mt-1">{station.costInfo}</p>
-                  )}
-
                   <div className="flex flex-wrap gap-1 mt-2">
-                    <a
-                      href={`https://www.google.com/maps/dir/?api=1&destination=${station.latitude},${station.longitude}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-[10px] bg-blue-500 text-white px-2 py-1 rounded hover:bg-blue-600"
-                    >
-                      Navigate
-                    </a>
-                    {station.ocmId && (
-                      <>
-                        <a
-                          href={`https://www.plugshare.com/location/${station.ocmId}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-[10px] bg-orange-500 text-white px-2 py-1 rounded hover:bg-orange-600"
-                        >
-                          PlugShare
-                        </a>
-                        <a
-                          href={`https://abetterrouteplanner.com/?plugs=${station.ocmId}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-[10px] bg-purple-500 text-white px-2 py-1 rounded hover:bg-purple-600"
-                        >
-                          ABRP
-                        </a>
-                      </>
-                    )}
+                    <a href={`https://www.google.com/maps/dir/?api=1&destination=${station.latitude},${station.longitude}`} target="_blank" rel="noopener noreferrer" className="text-[10px] bg-blue-500 text-white px-2 py-1 rounded hover:bg-blue-600">Navigate</a>
+                    <a href={`https://api.plugshare.com/view/location/${station.ocmId}`} target="_blank" rel="noopener noreferrer" className="text-[10px] bg-orange-500 text-white px-2 py-1 rounded hover:bg-orange-600">PlugShare</a>
+                    <a href={`https://abetterrouteplanner.com/?charger=${station.ocmId}`} target="_blank" rel="noopener noreferrer" className="text-[10px] bg-purple-500 text-white px-2 py-1 rounded hover:bg-purple-600">ABRP</a>
                   </div>
                 </div>
               </Popup>
