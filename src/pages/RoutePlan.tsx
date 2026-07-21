@@ -5,7 +5,7 @@ import { useVehicle } from '../context/VehicleContext';
 import { searchChargersByLocation } from '../services/openChargeMap';
 import { calculateFullRoute, getOSRMRoute } from '../services/routeCalculator';
 import type { ChargerStation, ConnectorType, RoutePlan } from '../types';
-import { CONNECTOR_LABELS } from '../types';
+import { CONNECTOR_LABELS, STATUS_LABELS } from '../types';
 
 interface GeocodeResult {
   lat: number;
@@ -590,15 +590,24 @@ export default function RoutePlanPage() {
               icon={getChargerIcon(station.status)}
             >
               <Popup>
-                <div className="min-w-[200px]">
+                <div className="min-w-[220px]">
                   <p className="font-bold text-sm">{station.name}</p>
                   <p className="text-xs text-gray-500">{station.address}, {station.city}</p>
-                  <div className="mt-1">
-                    {station.connections.map((c, i) => (
-                      <p key={i} className="text-xs">
-                        {CONNECTOR_LABELS[c.type]} - {c.powerKw} kW
-                      </p>
-                    ))}
+                  {station.operators[0] && (
+                    <p className="text-xs font-medium text-blue-600 mt-0.5">{station.operators[0]}</p>
+                  )}
+                  <div className="mt-1 space-y-0.5">
+                    {station.connections.map((c, i) => {
+                      const levelLabel = c.level === 3 ? 'DC' : c.level === 2 ? 'AC' : '';
+                      return (
+                        <p key={i} className="text-xs">
+                          <span className={`font-medium ${c.level === 3 ? 'text-orange-600' : 'text-blue-600'}`}>
+                            {levelLabel}
+                          </span>{' '}
+                          {CONNECTOR_LABELS[c.type]} - {c.powerKw} kW
+                        </p>
+                      );
+                    })}
                   </div>
                   <p className="text-xs mt-1">
                     <span className={`font-medium ${
@@ -606,12 +615,40 @@ export default function RoutePlanPage() {
                       station.status === 'busy' ? 'text-yellow-600' :
                       station.status === 'offline' ? 'text-red-600' : 'text-gray-600'
                     }`}>
-                      {station.status === 'available' ? 'Available' :
-                       station.status === 'busy' ? 'Busy' :
-                       station.status === 'offline' ? 'Offline' : 'Unknown'}
+                      {STATUS_LABELS[station.status]}
                     </span>
                     {station.rating > 0 && <span className="ml-2">⭐ {station.rating.toFixed(1)}</span>}
                   </p>
+                  <div className="flex flex-wrap gap-1 mt-1">
+                    <a
+                      href={`https://www.google.com/maps/dir/?api=1&destination=${station.latitude},${station.longitude}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-[10px] bg-blue-500 text-white px-2 py-1 rounded hover:bg-blue-600"
+                    >
+                      Navigate
+                    </a>
+                    {station.ocmId && (
+                      <>
+                        <a
+                          href={`https://www.plugshare.com/location/${station.ocmId}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-[10px] bg-orange-500 text-white px-2 py-1 rounded hover:bg-orange-600"
+                        >
+                          PlugShare
+                        </a>
+                        <a
+                          href={`https://abetterrouteplanner.com/?plugs=${station.ocmId}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-[10px] bg-purple-500 text-white px-2 py-1 rounded hover:bg-purple-600"
+                        >
+                          ABRP
+                        </a>
+                      </>
+                    )}
+                  </div>
                 </div>
               </Popup>
             </Marker>

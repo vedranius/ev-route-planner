@@ -166,41 +166,52 @@ export default function ChargersPage() {
         </div>
 
         <div className="space-y-2 max-h-[40vh] overflow-y-auto scrollbar-thin">
-          {filteredStations.slice(0, 50).map((station) => (
-            <div
-              key={station.id}
-              className={`card cursor-pointer transition-all ${
-                selectedStation?.id === station.id ? 'border-[#10b981]' : 'hover:border-[#64748b]'
-              }`}
-              onClick={() => setSelectedStation(station)}
-            >
-              <div className="flex items-start justify-between">
-                <div className="flex-1 min-w-0">
-                  <p className="font-medium text-sm truncate">{station.name}</p>
-                  <p className="text-xs text-[#94a3b8] truncate">{station.city}, {station.country}</p>
-                  <div className="flex flex-wrap gap-1 mt-1">
-                    {station.connections.slice(0, 3).map((c, i) => (
-                      <span key={i} className="badge badge-blue text-[10px]">
-                        {CONNECTOR_LABELS[c.type]} {c.powerKw}kW
-                      </span>
-                    ))}
+          {filteredStations.slice(0, 50).map((station) => {
+            const dcConns = station.connections.filter((c) => c.level === 3 || c.powerKw >= 20);
+            const maxDcPower = dcConns.length > 0 ? Math.max(...dcConns.map((c) => c.powerKw)) : 0;
+            return (
+              <div
+                key={station.id}
+                className={`card cursor-pointer transition-all ${
+                  selectedStation?.id === station.id ? 'border-[#10b981]' : 'hover:border-[#64748b]'
+                }`}
+                onClick={() => setSelectedStation(station)}
+              >
+                <div className="flex items-start justify-between">
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium text-sm truncate">{station.name}</p>
+                    <p className="text-xs text-[#64748b] truncate">{station.operators[0] || 'Unknown operator'}</p>
+                    <p className="text-xs text-[#94a3b8] truncate">{station.city}, {station.country}</p>
+                    <div className="flex flex-wrap gap-1 mt-1">
+                      {maxDcPower > 0 && (
+                        <span className="badge badge-yellow text-[10px]">DC {maxDcPower}kW</span>
+                      )}
+                      {station.connections.filter((c) => c.level !== 3 && c.powerKw < 20).length > 0 && (
+                        <span className="badge badge-blue text-[10px]">AC</span>
+                      )}
+                      {station.connections.slice(0, 2).map((c, i) => (
+                        <span key={i} className="badge badge-blue text-[10px]">
+                          {CONNECTOR_LABELS[c.type]} {c.powerKw}kW
+                        </span>
+                      ))}
+                    </div>
                   </div>
+                  <span className={`badge ${
+                    station.status === 'available' ? 'badge-green' :
+                    station.status === 'busy' ? 'badge-yellow' :
+                    station.status === 'offline' ? 'badge-red' : 'badge-gray'
+                  }`}>
+                    {STATUS_LABELS[station.status]}
+                  </span>
                 </div>
-                <span className={`badge ${
-                  station.status === 'available' ? 'badge-green' :
-                  station.status === 'busy' ? 'badge-yellow' :
-                  station.status === 'offline' ? 'badge-red' : 'badge-gray'
-                }`}>
-                  {STATUS_LABELS[station.status]}
-                </span>
+                {station.rating > 0 && (
+                  <p className="text-xs text-[#94a3b8] mt-1">
+                    ⭐ {station.rating.toFixed(1)} ({station.reviewCount} reviews)
+                  </p>
+                )}
               </div>
-              {station.rating > 0 && (
-                <p className="text-xs text-[#94a3b8] mt-1">
-                  ⭐ {station.rating.toFixed(1)} ({station.reviewCount} reviews)
-                </p>
-              )}
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
 
@@ -227,17 +238,30 @@ export default function ChargersPage() {
               }}
             >
               <Popup>
-                <div className="min-w-[220px]">
+                <div className="min-w-[240px]">
                   <p className="font-bold text-sm">{station.name}</p>
                   <p className="text-xs text-gray-500">{station.address}</p>
                   <p className="text-xs text-gray-500">{station.city}, {station.country}</p>
+
+                  {station.operators[0] && (
+                    <p className="text-xs font-medium text-blue-600 mt-1">{station.operators[0]}</p>
+                  )}
+
                   <div className="mt-2 space-y-0.5">
-                    {station.connections.map((c, i) => (
-                      <p key={i} className="text-xs font-medium">
-                        {CONNECTOR_LABELS[c.type]} - {c.powerKw} kW ({c.current}A / {c.voltage}V)
-                      </p>
-                    ))}
+                    {station.connections.map((c, i) => {
+                      const levelLabel = c.level === 3 ? 'DC' : c.level === 2 ? 'AC' : '';
+                      return (
+                        <p key={i} className="text-xs">
+                          <span className={`font-medium ${c.level === 3 ? 'text-orange-600' : 'text-blue-600'}`}>
+                            {levelLabel}
+                          </span>{' '}
+                          {CONNECTOR_LABELS[c.type]} - {c.powerKw} kW
+                          {c.current > 0 && <span className="text-gray-400"> ({c.current}A)</span>}
+                        </p>
+                      );
+                    })}
                   </div>
+
                   <div className="mt-2 text-xs">
                     <span className={`font-medium ${
                       station.status === 'available' ? 'text-green-600' :
@@ -246,28 +270,42 @@ export default function ChargersPage() {
                     }`}>
                       {STATUS_LABELS[station.status]}
                     </span>
+                    {station.rating > 0 && <span className="ml-2">⭐ {station.rating.toFixed(1)}</span>}
                   </div>
-                  {station.rating > 0 && (
-                    <p className="text-xs mt-1">⭐ {station.rating.toFixed(1)} ({station.reviewCount} reviews)</p>
+
+                  {station.costInfo && (
+                    <p className="text-xs text-gray-400 mt-1">{station.costInfo}</p>
                   )}
-                  <p className="text-xs text-gray-400 mt-1">Operator: {station.operators.join(', ')}</p>
-                  <div className="flex gap-2 mt-2">
+
+                  <div className="flex flex-wrap gap-1 mt-2">
                     <a
                       href={`https://www.google.com/maps/dir/?api=1&destination=${station.latitude},${station.longitude}`}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="text-xs bg-blue-500 text-white px-2 py-1 rounded hover:bg-blue-600"
+                      className="text-[10px] bg-blue-500 text-white px-2 py-1 rounded hover:bg-blue-600"
                     >
                       Navigate
                     </a>
-                    <a
-                      href={`https://www.google.com/maps/search/?api=1&query=${station.latitude},${station.longitude}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-xs bg-gray-500 text-white px-2 py-1 rounded hover:bg-gray-600"
-                    >
-                      View on Maps
-                    </a>
+                    {station.ocmId && (
+                      <>
+                        <a
+                          href={`https://www.plugshare.com/location/${station.ocmId}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-[10px] bg-orange-500 text-white px-2 py-1 rounded hover:bg-orange-600"
+                        >
+                          PlugShare
+                        </a>
+                        <a
+                          href={`https://abetterrouteplanner.com/?plugs=${station.ocmId}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-[10px] bg-purple-500 text-white px-2 py-1 rounded hover:bg-purple-600"
+                        >
+                          ABRP
+                        </a>
+                      </>
+                    )}
                   </div>
                 </div>
               </Popup>

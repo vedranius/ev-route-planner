@@ -83,15 +83,12 @@ const STATUS_MAP: Record<number, ChargerStatus> = {
   10: 'available',
   20: 'busy',
   30: 'offline',
-  40: 'out_of_order',
-  50: 'out_of_order',
-  75: 'offline',
-  99: 'unknown',
-  150: 'available',
-  200: 'busy',
-  210: 'busy',
-  220: 'offline',
-  230: 'out_of_order',
+  50: 'available',
+  75: 'available',
+  100: 'out_of_order',
+  150: 'offline',
+  200: 'out_of_order',
+  210: 'out_of_order',
 };
 
 function mapConnectorType(connectionTypeId: number): ConnectorType {
@@ -187,6 +184,7 @@ function mapOCMToStation(poi: any): ChargerStation | null {
     current: c.Amps || c.amps || 0,
     voltage: c.Voltage || c.voltage || 0,
     quantity: c.Quantity || c.quantity || 1,
+    level: (c.LevelID || 2) as ChargingLevel,
   }));
 
   if (connections.length === 0) return null;
@@ -194,6 +192,10 @@ function mapOCMToStation(poi: any): ChargerStation | null {
   const photos: string[] = (poi.MediaItems || poi.mediaItems || []).map(
     (m: any) => m.Item?.URL || m.url || ''
   ).filter(Boolean);
+
+  const operator = poi.OperatorInfo || poi.operatorInfo || {};
+  const operatorUrl = operator.WebsiteURL || operator.websiteURL || undefined;
+  const operatorName = operator.Title || operator.title || '';
 
   return {
     id: `ocm-${poi.ID || poi.id}`,
@@ -204,7 +206,8 @@ function mapOCMToStation(poi: any): ChargerStation | null {
     country: addr.Country?.Title || addr.country?.title || '',
     latitude: addr.Latitude || addr.latitude || 0,
     longitude: addr.Longitude || addr.longitude || 0,
-    operators: [poi.OperatorInfo?.Title || poi.operatorInfo?.title || 'Unknown'].filter(Boolean).filter((v: string, i: number, a: string[]) => a.indexOf(v) === i),
+    operators: [operatorName].filter(Boolean).filter((v: string, i: number, a: string[]) => a.indexOf(v) === i),
+    operatorUrl,
     connections,
     level: estimateLevel(connections),
     status: mapStatus(poi.StatusTypeID ?? poi.statusTypeId ?? 0),
@@ -214,6 +217,7 @@ function mapOCMToStation(poi: any): ChargerStation | null {
     source: 'openchargemap',
     lastVerified: poi.DateLastVerified ? new Date(poi.DateLastVerified).getTime() : undefined,
     openingHours: poi.UsageType?.Title || poi.usageType?.title || undefined,
+    costInfo: poi.UsageCost || poi.usageCost || undefined,
     amenities: [],
   };
 }

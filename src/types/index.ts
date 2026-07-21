@@ -59,6 +59,7 @@ export interface ChargerStation {
   latitude: number;
   longitude: number;
   operators: string[];
+  operatorUrl?: string;
   connections: ChargerConnection[];
   level: ChargingLevel;
   status: ChargerStatus;
@@ -78,6 +79,7 @@ export interface ChargerConnection {
   current: number;
   voltage: number;
   quantity: number;
+  level: ChargingLevel;
 }
 
 export type ChargerStatus = 'available' | 'busy' | 'offline' | 'unknown' | 'out_of_order';
