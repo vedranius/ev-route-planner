@@ -4,7 +4,7 @@ import tailwindcss from '@tailwindcss/vite'
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
-  base: './',
+  base: '/ev-route-planner/',
   server: {
     proxy: {
       '/api/openchargemap': {

@@ -586,6 +586,32 @@ export default function RoutePlanPage() {
               </div>
             </div>
 
+            {/* Cross-app links */}
+            <div className="flex flex-wrap gap-1.5 mb-3 pt-1 border-t border-[#334155]">
+              {startCoords && endCoords && (
+                <a
+                  href={`https://abetterrouteplanner.com/?plan_uuid=new&lat_o=${startCoords[0]}&lng_o=${startCoords[1]}&lat_d=${endCoords[0]}&lng_d=${endCoords[1]}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-[11px] bg-purple-600 text-white px-3 py-1.5 rounded-lg hover:bg-purple-700 font-medium"
+                  title="Cross-check this route in ABRP"
+                >
+                  Open in ABRP ↗
+                </a>
+              )}
+              {startCoords && (
+                <a
+                  href={`https://www.plugshare.com/?latitude=${startCoords[0]}&longitude=${startCoords[1]}&zoom=10`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-[11px] bg-orange-600 text-white px-3 py-1.5 rounded-lg hover:bg-orange-700 font-medium"
+                  title="Browse chargers along route on PlugShare"
+                >
+                  PlugShare Map ↗
+                </a>
+              )}
+            </div>
+
             {route.stops.length > 0 && (
               <div className="space-y-2">
                 <h4 className="text-sm font-semibold text-[#94a3b8]">Charging Stops</h4>
@@ -603,6 +629,28 @@ export default function RoutePlanPage() {
                     <p className="text-xs text-[#94a3b8] mt-1">
                       {stop.chargerStation.connections.map((c) => CONNECTOR_LABELS[c.type]).join(', ')}
                     </p>
+                    <div className="flex gap-1.5 mt-1.5">
+                      <a
+                        href={`https://www.plugshare.com/?latitude=${stop.chargerStation.latitude}&longitude=${stop.chargerStation.longitude}&zoom=16`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-[10px] bg-orange-500/20 text-orange-400 px-2 py-0.5 rounded hover:bg-orange-500/30"
+                        title="Reviews on PlugShare"
+                      >
+                        PlugShare ↗
+                      </a>
+                      {stop.chargerStation.ocmId && (
+                        <a
+                          href={`https://abetterrouteplanner.com/?charger=${stop.chargerStation.ocmId}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-[10px] bg-purple-500/20 text-purple-400 px-2 py-0.5 rounded hover:bg-purple-500/30"
+                          title="View in ABRP"
+                        >
+                          ABRP ↗
+                        </a>
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>
@@ -722,25 +770,25 @@ export default function RoutePlanPage() {
                     >
                       Navigate
                     </a>
+                    <a
+                      href={`https://www.plugshare.com/?latitude=${station.latitude}&longitude=${station.longitude}&zoom=16`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-[10px] bg-orange-500 text-white px-2 py-1 rounded hover:bg-orange-600"
+                      title="Reviews & check-ins on PlugShare"
+                    >
+                      PlugShare ↗
+                    </a>
                     {station.ocmId && (
-                      <>
-                        <a
-                          href={`https://api.plugshare.com/view/location/${station.ocmId}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-[10px] bg-orange-500 text-white px-2 py-1 rounded hover:bg-orange-600"
-                        >
-                          PlugShare
-                        </a>
-                        <a
-                          href={`https://abetterrouteplanner.com/?charger=${station.ocmId}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-[10px] bg-purple-500 text-white px-2 py-1 rounded hover:bg-purple-600"
-                        >
-                          ABRP
-                        </a>
-                      </>
+                      <a
+                        href={`https://abetterrouteplanner.com/?charger=${station.ocmId}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-[10px] bg-purple-500 text-white px-2 py-1 rounded hover:bg-purple-600"
+                        title="View charger in ABRP"
+                      >
+                        ABRP ↗
+                      </a>
                     )}
                   </div>
                 </div>

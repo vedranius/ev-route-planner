@@ -150,18 +150,20 @@ function ChargerDetailPanel({ station, onClose }: { station: ChargerStation; onC
           View on Map
         </a>
         <a
-          href={`https://api.plugshare.com/view/location/${station.ocmId}`}
+          href={`https://www.plugshare.com/?latitude=${station.latitude}&longitude=${station.longitude}&zoom=16`}
           target="_blank" rel="noopener noreferrer"
           className="text-[11px] bg-orange-600 text-white px-3 py-1.5 rounded-lg hover:bg-orange-700"
+          title="View reviews & check-ins on PlugShare"
         >
-          PlugShare
+          PlugShare ↗
         </a>
         <a
           href={`https://abetterrouteplanner.com/?charger=${station.ocmId}`}
           target="_blank" rel="noopener noreferrer"
           className="text-[11px] bg-purple-600 text-white px-3 py-1.5 rounded-lg hover:bg-purple-700"
+          title="View charger in ABRP"
         >
-          ABRP
+          ABRP ↗
         </a>
       </div>
     </div>
@@ -410,8 +412,8 @@ export default function ChargersPage() {
                   </div>
                   <div className="flex flex-wrap gap-1 mt-2">
                     <a href={`https://www.google.com/maps/dir/?api=1&destination=${station.latitude},${station.longitude}`} target="_blank" rel="noopener noreferrer" className="text-[10px] bg-blue-500 text-white px-2 py-1 rounded hover:bg-blue-600">Navigate</a>
-                    <a href={`https://api.plugshare.com/view/location/${station.ocmId}`} target="_blank" rel="noopener noreferrer" className="text-[10px] bg-orange-500 text-white px-2 py-1 rounded hover:bg-orange-600">PlugShare</a>
-                    <a href={`https://abetterrouteplanner.com/?charger=${station.ocmId}`} target="_blank" rel="noopener noreferrer" className="text-[10px] bg-purple-500 text-white px-2 py-1 rounded hover:bg-purple-600">ABRP</a>
+                    <a href={`https://www.plugshare.com/?latitude=${station.latitude}&longitude=${station.longitude}&zoom=16`} target="_blank" rel="noopener noreferrer" className="text-[10px] bg-orange-500 text-white px-2 py-1 rounded hover:bg-orange-600" title="Reviews & check-ins on PlugShare">PlugShare ↗</a>
+                    <a href={`https://abetterrouteplanner.com/?charger=${station.ocmId}`} target="_blank" rel="noopener noreferrer" className="text-[10px] bg-purple-500 text-white px-2 py-1 rounded hover:bg-purple-600" title="View in ABRP">ABRP ↗</a>
                   </div>
                 </div>
               </Popup>
